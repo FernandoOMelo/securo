@@ -285,6 +285,19 @@ describe('Dashboard available balance without an FX rate', () => {
   })
 })
 
+describe('Dashboard available balance steps', () => {
+  it('shows where the month started, the balance now and the forecast', async () => {
+    api.dashboard.summary.mockResolvedValue({ ...summary, available_opening_primary: 955.14, available_projected_primary: 90 })
+    renderWithProviders(<TooltipProvider delayDuration={0}><DashboardPage /></TooltipProvider>)
+
+    const steps = await screen.findByTestId('balance-steps')
+
+    expect(steps).toHaveTextContent(t('dashboard.balanceInitial'))
+    expect(steps).toHaveTextContent(formatCurrency(955.14, 'USD', 'en-US'))
+    expect(steps).toHaveTextContent(formatCurrency(90, 'USD', 'en-US'))
+  })
+})
+
 describe('Dashboard balance comparisons', () => {
   const month = (value: string) => monthLabel(value, 'en')
   const money = (value: number) => formatCurrency(value, 'USD', 'en-US')

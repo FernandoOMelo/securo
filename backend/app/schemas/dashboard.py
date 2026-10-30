@@ -35,6 +35,11 @@ class DashboardSummary(BaseModel):
     # waiting to be paid back). Computed from group balance lines so
     # it already accounts for any partial settlements.
     pending_shares_net: float = 0.0
+    # Checking and savings only, in the primary currency: the balance the
+    # month started with and where it is expected to end (current balance plus
+    # what is still pending or recurring before month end).
+    available_opening_primary: float = 0.0
+    available_projected_primary: float = 0.0
 
 
 class SpendingByCategory(BaseModel):

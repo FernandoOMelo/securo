@@ -51,6 +51,7 @@ import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { CategoryIcon } from '@/components/category-icon'
+import { BalanceSteps } from '@/components/balance-steps'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -770,9 +771,19 @@ export default function DashboardPage() {
                   colour is left to mean direction (income, expenses) and
                   exception (a negative balance), so it still says something
                   when it does appear. */}
-              <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
-              </p>
+              {summary?.available_opening_primary != null && summary.available_projected_primary != null ? (
+                <BalanceSteps
+                  opening={summary.available_opening_primary}
+                  current={availableBalance}
+                  projected={summary.available_projected_primary}
+                  currency={primaryCurrency}
+                  locale={locale}
+                />
+              ) : (
+                <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                  {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
+                </p>
+              )}
               {/* Visible text, not a hover title, so touch users can read it. */}
               {availableBalanceHasFxFallback && (
                 <p className="flex items-start gap-1.5 mt-1 text-xs text-amber-700 dark:text-amber-400">

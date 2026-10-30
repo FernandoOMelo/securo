@@ -847,6 +847,8 @@ export interface DashboardSummary {
   // Negative = net liability, positive = net receivable. Already
   // accounts for partial settlements.
   pending_shares_net: number
+  available_opening_primary?: number
+  available_projected_primary?: number
 }
 
 export interface SpendingByCategory {

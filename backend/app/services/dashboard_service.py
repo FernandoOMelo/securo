@@ -245,55 +245,16 @@ async def _sum_to_primary(
     return total, fx_fallback
 
 
-async def get_summary(
+async def _apply_forecast(
     session: AsyncSession,
     workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
-    month: Optional[date] = None,
-    balance_date: Optional[date] = None,
-    account_ids: Optional[list[uuid.UUID]] = None,
-    asset_group_ids: Optional[list[uuid.UUID]] = None,
-) -> DashboardSummary:
-    if not month:
-        month = app_today().replace(day=1)
-
-    month_start, month_end = _month_range(month)
-    today = app_today()
-
-    # Collection filter (issue #105): show the *raw* P&L/balances of the
-    # collection's accounts, plus the assets in its wallets (asset_group_ids);
-    # group-split redistribution and cross-group shares are gated off so the
-    # filtered numbers stay self-consistent. A wallet-only collection (wallets
-    # but no accounts) still filters — coerce accounts to empty.
-    if asset_group_ids is not None and account_ids is None:
-        account_ids = []
-    filtered = account_ids is not None
-    acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
-
-    # Reporting mode is a global app setting (admin-controlled). When "accrual",
-    # aggregation queries bucket credit card transactions by the bill's due
-    # date (effective_date) instead of the purchase date — gives a true
-    # cash-flow view.
-    user = await session.get(User, user_id)
-    accounting_mode = await get_credit_card_accounting_mode(session)
-    report_date = reporting_date_col(accounting_mode)
-
-    # Compute the effective cutoff date for balance calculation
-    if balance_date:
-        cutoff = balance_date
-    elif month_end <= today:
-        # Past month: last day of that month
-        cutoff = month_end - timedelta(days=1)
-    else:
-        # Current or future month: today
-        cutoff = today
-
-    # ``total_balance`` is deliberately current/posted-only. Forecast rows are
-    # accumulated separately so a future installment or pending bank row never
-    # silently changes the number labelled as the current balance.
-    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
-    projected_balance = dict(total_balance)
-
+    projected_balance: dict[str, float],
+    cutoff: date,
+    month_end: date,
+    today: date,
+    account_ids: Optional[list[uuid.UUID]],
+) -> None:
+    """Add what is still expected to move before `month_end` to `projected_balance`."""
     # For current/future months, project the balance by adding recurring
     # projections and real forecast rows from cutoff+1 through month_end.
     # A month that has already elapsed has no forecast: `cutoff` is its own
@@ -369,6 +330,80 @@ async def get_summary(
                 projected_balance[claim.currency] = (
                     projected_balance.get(claim.currency, 0.0) + float(claim.signed)
                 )
+
+
+async def get_summary(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    month: Optional[date] = None,
+    balance_date: Optional[date] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
+) -> DashboardSummary:
+    if not month:
+        month = app_today().replace(day=1)
+
+    month_start, month_end = _month_range(month)
+    today = app_today()
+
+    # Collection filter (issue #105): show the *raw* P&L/balances of the
+    # collection's accounts, plus the assets in its wallets (asset_group_ids);
+    # group-split redistribution and cross-group shares are gated off so the
+    # filtered numbers stay self-consistent. A wallet-only collection (wallets
+    # but no accounts) still filters — coerce accounts to empty.
+    if asset_group_ids is not None and account_ids is None:
+        account_ids = []
+    filtered = account_ids is not None
+    acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
+
+    # Reporting mode is a global app setting (admin-controlled). When "accrual",
+    # aggregation queries bucket credit card transactions by the bill's due
+    # date (effective_date) instead of the purchase date — gives a true
+    # cash-flow view.
+    user = await session.get(User, user_id)
+    accounting_mode = await get_credit_card_accounting_mode(session)
+    report_date = reporting_date_col(accounting_mode)
+
+    # Compute the effective cutoff date for balance calculation
+    if balance_date:
+        cutoff = balance_date
+    elif month_end <= today:
+        # Past month: last day of that month
+        cutoff = month_end - timedelta(days=1)
+    else:
+        # Current or future month: today
+        cutoff = today
+
+    # ``total_balance`` is deliberately current/posted-only. Forecast rows are
+    # accumulated separately so a future installment or pending bank row never
+    # silently changes the number labelled as the current balance.
+    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
+    projected_balance = dict(total_balance)
+
+    await _apply_forecast(
+        session, workspace_id, projected_balance, cutoff, month_end, today, account_ids
+    )
+
+    # The same walk for checking and savings only: what is spendable, where the
+    # month started and where it is expected to end.
+    available_ids = [
+        account.id
+        for account in await _get_open_accounts(session, workspace_id, account_ids)
+        if account.type in {"checking", "savings"}
+    ]
+    available_opening: dict[str, float] = {}
+    available_projected: dict[str, float] = {}
+    if available_ids:
+        available_opening = await _total_balance_by_currency(
+            session, workspace_id, month_start - timedelta(days=1), available_ids
+        )
+        available_projected = await _total_balance_by_currency(
+            session, workspace_id, cutoff, available_ids
+        )
+        await _apply_forecast(
+            session, workspace_id, available_projected, cutoff, month_end, today, available_ids
+        )
 
     # Monthly income and expenses — exclude opening_balance so initial deposits
     # don't inflate the month's income figure. counts_as_user_pnl() skips
@@ -652,6 +687,13 @@ async def get_summary(
         )
     )
 
+    available_opening_primary, _ = await _sum_to_primary(
+        session, available_opening, primary_currency, month_start - timedelta(days=1)
+    )
+    available_projected_primary, _ = await _sum_to_primary(
+        session, available_projected, primary_currency, cutoff
+    )
+
     return DashboardSummary(
         total_balance=total_balance,
         total_balance_primary=round(total_balance_primary, 2),
@@ -674,6 +716,8 @@ async def get_summary(
         primary_currency=primary_currency,
         fx_fallback=fx_fallback,
         pending_shares_net=round(pending_shares_net, 2),
+        available_opening_primary=round(available_opening_primary, 2),
+        available_projected_primary=round(available_projected_primary, 2),
     )
 
 
