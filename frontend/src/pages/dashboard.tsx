@@ -44,6 +44,8 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { DashboardCustomizer } from '@/components/dashboard-customizer'
 import { DashboardCardsWidget } from '@/components/dashboard-cards-widget'
+import { DashboardBudgetsWidget } from '@/components/dashboard-budgets-widget'
+import { DashboardPendingWidget } from '@/components/dashboard-pending-widget'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -987,6 +989,8 @@ export default function DashboardPage() {
       </>
     ),
     cards: <DashboardCardsWidget month={selectedMonth} />,
+    budgets: <DashboardBudgetsWidget month={selectedMonth} currency={userCurrency} />,
+    pending: <DashboardPendingWidget month={selectedMonth} currency={userCurrency} />,
     uncategorized: (
       <>
       {/* Uncategorized banner */}

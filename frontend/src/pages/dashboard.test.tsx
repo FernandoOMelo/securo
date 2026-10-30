@@ -614,7 +614,7 @@ describe('Dashboard layout', () => {
 
     await waitFor(() => expect(widgetIds().length).toBeGreaterThan(0))
     expect(widgetIds()).toEqual([
-      'overview', 'cards', 'uncategorized', 'categories', 'evolution', 'goals', 'transactions',
+      'overview', 'cards', 'uncategorized', 'budgets', 'pending', 'categories', 'evolution', 'goals', 'transactions',
     ])
   })
 
@@ -721,5 +721,73 @@ describe('Dashboard layout', () => {
     renderDashboard()
 
     expect(await screen.findByText('Estimada')).toBeInTheDocument()
+  })
+
+  const budgetRow = (over: Record<string, unknown>) => ({
+    category_id: 'a', category_name: 'Mercado', category_icon: 'x', category_color: '#111111',
+    group_id: null, group_name: null, budget_amount: 500, actual_amount: 450, projected_amount: 450,
+    prev_month_amount: 0, projected_prev_month_amount: 0, percentage_used: 90, is_recurring: false, ...over,
+  })
+
+  it('mostra os orçamentos do mês, do mais comprometido ao menos', async () => {
+    api.budgets.comparison.mockResolvedValue([
+      budgetRow({ category_id: 'a', category_name: 'Mercado' }),
+      budgetRow({ category_id: 'b', category_name: 'Lazer', budget_amount: 100, actual_amount: 150, percentage_used: 150 }),
+      budgetRow({ category_id: 'c', category_name: 'Sem orçamento', budget_amount: null, actual_amount: 80, percentage_used: null }),
+    ])
+
+    renderDashboard()
+
+    const widget = await screen.findByTestId('dashboard-budgets-widget')
+    const names = (await within(widget).findAllByRole('listitem')).map((li) => li.textContent ?? '')
+    expect(names[0]).toContain('Lazer')
+    expect(names[1]).toContain('Mercado')
+    expect(within(widget).queryByText(/Sem orçamento/)).not.toBeInTheDocument()
+    expect(within(widget).getByRole('progressbar', { name: 'Lazer' })).toHaveAttribute('aria-valuetext', '150%')
+  })
+
+  it('avisa quando não há orçamento no mês', async () => {
+    api.budgets.comparison.mockResolvedValue([])
+
+    renderDashboard()
+
+    const widget = await screen.findByTestId('dashboard-budgets-widget')
+    expect(within(widget).getByText('Nenhum orçamento definido para este mês.')).toBeInTheDocument()
+  })
+
+  it('lista as pendências do mês com o que falta entrar e sair', async () => {
+    api.transactions.list.mockImplementation(async (params?: { status?: string }) =>
+      params?.status === 'pending'
+        ? {
+            items: [
+              { id: 'p1', date: '2026-10-30', description: 'Aluguel', amount: 1500, currency: 'BRL', type: 'debit' },
+              { id: 'p2', date: '2026-10-31', description: 'Salário', amount: 4000, currency: 'BRL', type: 'credit' },
+            ],
+            total: 9,
+            page: 1,
+            limit: 6,
+            summary: { income: 4000, expense: 1500, net: 2500, excluded: 0, currency: 'BRL' },
+          }
+        : { items: [], total: 0 },
+    )
+
+    renderDashboard()
+
+    const widget = await screen.findByTestId('dashboard-pending-widget')
+    expect(await within(widget).findByText(/Aluguel/)).toBeInTheDocument()
+    expect(within(widget).getByText(/Salário/)).toBeInTheDocument()
+    expect(within(widget).getByText(/A receber/)).toBeInTheDocument()
+    expect(within(widget).getByText('+7 pendentes')).toBeInTheDocument()
+    expect(within(widget).getByRole('link', { name: /Ver todas/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('status=pending'),
+    )
+  })
+
+  it('avisa quando nada está pendente', async () => {
+    renderDashboard()
+
+    const widget = await screen.findByTestId('dashboard-pending-widget')
+    expect(await within(widget).findByText('Nada pendente neste mês.')).toBeInTheDocument()
   })
 })

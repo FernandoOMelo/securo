@@ -3342,7 +3342,9 @@
       "categories": "Gastos por categoria",
       "evolution": "Evolução dos gastos",
       "goals": "Objetivos",
-      "transactions": "Lançamentos do período"
+      "transactions": "Lançamentos do período",
+      "budgets": "Orçamentos",
+      "pending": "Pendências"
     },
     "cardsWidget": {
       "title": "Cartões de crédito",
@@ -3350,6 +3352,20 @@
       "noBills": "Nenhuma fatura vence neste mês.",
       "viewAll": "Ver todas as faturas",
       "unpaidInMonth": "Há fatura deste mês sem pagamento identificado"
+    },
+    "budgetsWidget": {
+      "title": "Orçamentos do mês",
+      "of": "de",
+      "empty": "Nenhum orçamento definido para este mês.",
+      "viewAll": "Ver orçamentos"
+    },
+    "pendingWidget": {
+      "title": "Pendências do mês",
+      "toReceive": "A receber",
+      "toPay": "A pagar",
+      "empty": "Nada pendente neste mês.",
+      "more": "+{{count}} pendentes",
+      "viewAll": "Ver todas"
     }
   }
 }
