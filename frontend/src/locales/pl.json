@@ -3222,5 +3222,22 @@
       "recurring": "Reguły Cyklicznych",
       "recurringHint": "Jak ustalamy, że obciążenie to rachunek, którego już oczekiwałeś."
     }
+  },
+  "syncMatch": {
+    "banner": "Operacje bankowe do sprawdzenia: {{count}}. Mogą odpowiadać wpisom dodanym ręcznie.",
+    "review": "Sprawdź",
+    "title": "Sprawdź możliwe dopasowania",
+    "description": "Synchronizacja nie była pewna, że to ta sama operacja. Scalenie zachowuje Twój wpis (kategoria, notatki) i przejmuje kwotę oraz status z banku; zachowanie obu zostawia wszystko bez zmian.",
+    "yours": "Twój wpis",
+    "bank": "Z banku",
+    "keepBoth": "To różne operacje",
+    "merge": "To ta sama, scal",
+    "merged": "Scalono",
+    "kept": "Zachowano oba",
+    "reason": {
+      "description": "Ta sama kwota i zbliżona data, ale opis jest inny.",
+      "amount": "Podobny opis i data, ale kwota nieco się różni.",
+      "ambiguous": "Do tej operacji pasuje więcej niż jeden z Twoich wpisów."
+    }
   }
 }

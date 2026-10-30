@@ -3114,5 +3114,22 @@
       "recurring": "Reglas de Recurrentes",
       "recurringHint": "Cómo decidimos que un cargo es la cuenta que ya esperabas."
     }
+  },
+  "syncMatch": {
+    "banner": "Cargos del banco por revisar: {{count}}. Pueden coincidir con movimientos que registraste tú.",
+    "review": "Revisar",
+    "title": "Revisar posibles coincidencias",
+    "description": "La sincronización no estaba segura de que sean el mismo cargo. Combinar conserva tu movimiento (categoría, notas) y usa el importe y el estado del banco; mantener ambos deja todo como está.",
+    "yours": "Tu movimiento",
+    "bank": "Del banco",
+    "keepBoth": "Son cargos distintos",
+    "merge": "Es el mismo, combinar",
+    "merged": "Movimientos combinados",
+    "kept": "Se mantuvieron ambos",
+    "reason": {
+      "description": "Mismo importe y fecha cercana, pero la descripción es distinta.",
+      "amount": "Descripción y fecha parecidas, pero el importe difiere un poco.",
+      "ambiguous": "Más de uno de tus movimientos encaja con este cargo."
+    }
   }
 }

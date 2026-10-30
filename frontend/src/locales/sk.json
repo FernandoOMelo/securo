@@ -3256,5 +3256,22 @@
       "recurring": "Pravidlá opakovaných",
       "recurringHint": "Ako určujeme, že odpis je účet, ktorý ste už očakávali."
     }
+  },
+  "syncMatch": {
+    "banner": "Bankové transakcie na kontrolu: {{count}}. Môžu zodpovedať záznamom, ktoré ste zadali ručne.",
+    "review": "Skontrolovať",
+    "title": "Skontrolovať možné zhody",
+    "description": "Synchronizácia si nebola istá, že ide o rovnakú transakciu. Zlúčenie zachová váš záznam (kategóriu, poznámky) a prevezme sumu a stav z banky; ponechanie oboch nechá všetko bezo zmeny.",
+    "yours": "Váš záznam",
+    "bank": "Z banky",
+    "keepBoth": "Sú rôzne",
+    "merge": "Je to tá istá, zlúčiť",
+    "merged": "Zlúčené",
+    "kept": "Ponechané obe",
+    "reason": {
+      "description": "Rovnaká suma a blízky dátum, ale popis je iný.",
+      "amount": "Podobný popis a dátum, ale suma sa mierne líši.",
+      "ambiguous": "K tejto transakcii pasuje viac vašich záznamov."
+    }
   }
 }

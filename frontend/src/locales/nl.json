@@ -3112,5 +3112,22 @@
       "recurring": "Regels voor Terugkerend",
       "recurringHint": "Hoe we bepalen dat een afschrijving de rekening is die je al verwachtte."
     }
+  },
+  "syncMatch": {
+    "banner": "Bankboekingen om te controleren: {{count}}. Ze komen mogelijk overeen met items die je zelf hebt ingevoerd.",
+    "review": "Controleren",
+    "title": "Mogelijke koppelingen controleren",
+    "description": "De synchronisatie wist niet zeker of het dezelfde boeking is. Samenvoegen behoudt jouw item (categorie, notities) en neemt bedrag en status van de bank over; beide houden laat alles zoals het is.",
+    "yours": "Jouw item",
+    "bank": "Van de bank",
+    "keepBoth": "Verschillende boekingen",
+    "merge": "Dezelfde, samenvoegen",
+    "merged": "Samengevoegd",
+    "kept": "Beide behouden",
+    "reason": {
+      "description": "Zelfde bedrag en een nabije datum, maar de omschrijving verschilt.",
+      "amount": "Vergelijkbare omschrijving en datum, maar het bedrag wijkt iets af.",
+      "ambiguous": "Meer dan één van je items past bij deze boeking."
+    }
   }
 }

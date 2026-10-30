@@ -21,6 +21,7 @@ import type {
   AccountRunningBalancePoint,
   Collection,
   CreditCardBill,
+  SyncMatchSuggestion,
   LoanBalanceAdjustment,
   LoanBalanceUpdate,
   LoanSchedule,
@@ -560,6 +561,23 @@ export interface MortgagePaymentAllocation {
   interest_percentage: number
   historical: boolean
   bank_managed: boolean
+}
+
+export const syncMatchSuggestions = {
+  list: async (accountId?: string): Promise<SyncMatchSuggestion[]> => {
+    const { data } = await api.get('/sync-match-suggestions', { params: { account_id: accountId } })
+    return data
+  },
+  count: async (): Promise<{ pending: number }> => {
+    const { data } = await api.get('/sync-match-suggestions/count')
+    return data
+  },
+  merge: async (id: string): Promise<void> => {
+    await api.post(`/sync-match-suggestions/${id}/merge`)
+  },
+  decline: async (id: string): Promise<void> => {
+    await api.post(`/sync-match-suggestions/${id}/decline`)
+  },
 }
 
 export const mortgagePayments = {

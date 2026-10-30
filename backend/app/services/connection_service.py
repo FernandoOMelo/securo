@@ -55,6 +55,7 @@ from app.services.rule_service import apply_rules_to_transaction, preview_rules_
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
+from app.services import sync_match_service
 from app.services.transaction_match_service import find_unique_transaction_match
 
 logger = logging.getLogger(__name__)
@@ -1702,46 +1703,6 @@ async def _find_existing_connected_account(
     return account
 
 
-async def _fuzzy_match_manual(
-    session: AsyncSession,
-    account_id: uuid.UUID,
-    txn_data,
-) -> Optional[Transaction]:
-    """Try to find a manual transaction that matches the incoming synced one."""
-    date_lo = txn_data.date - timedelta(days=3)
-    date_hi = txn_data.date + timedelta(days=3)
-
-    result = await session.execute(
-        select(Transaction).where(
-            Transaction.account_id == account_id,
-            Transaction.external_id.is_(None),
-            Transaction.source == "manual",
-            Transaction.amount == txn_data.amount,
-            Transaction.type == txn_data.type,
-            Transaction.date >= date_lo,
-            Transaction.date <= date_hi,
-        )
-    )
-    candidates = result.scalars().all()
-    if not candidates:
-        return None
-
-    best_match = None
-    best_score = 0.0
-    for candidate in candidates:
-        score = token_overlap(
-            candidate.original_description or candidate.description,
-            txn_data.description,
-        )
-        if score > best_score:
-            best_score = score
-            best_match = candidate
-
-    if best_match and best_score >= 0.6:
-        return best_match
-    return None
-
-
 def _merge_sync_metadata(
     transaction: Transaction,
     txn_data,
@@ -2568,8 +2529,14 @@ async def sync_connection(
                             )
                     continue
 
-                # Pass 2: Fuzzy match against manual transactions
-                fuzzy_match = await _fuzzy_match_manual(session, account.id, txn_data)
+                # Pass 2: manual entries. One clear counterpart is merged on
+                # the spot; anything doubtful is inserted as usual and
+                # queued for review below instead of merging or duplicating
+                # silently.
+                manual_match = await sync_match_service.find_manual_match(
+                    session, account.id, txn_data
+                )
+                fuzzy_match = manual_match.strong
                 if fuzzy_match:
                     if fuzzy_match.is_ignored:
                         continue
@@ -2758,6 +2725,13 @@ async def sync_connection(
                         recurring_link, txn_data.date
                     )
                 new_tx_ids.append(transaction.id)
+                if manual_match.doubtful:
+                    await sync_match_service.record_suggestions(
+                        session,
+                        workspace_id=workspace_id,
+                        synced=transaction,
+                        doubtful=manual_match.doubtful,
+                    )
                 await apply_rules_to_transaction(session, user_id, transaction)
                 if transaction.category_id is None:
                     transaction.category_id = category_id

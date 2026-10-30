@@ -3111,5 +3111,22 @@
       "recurring": "Regeln für Wiederkehrendes",
       "recurringHint": "Wie wir entscheiden, dass eine Buchung die erwartete Rechnung ist."
     }
+  },
+  "syncMatch": {
+    "banner": "Bankbuchungen zur Prüfung: {{count}}. Sie könnten zu manuell erfassten Einträgen passen.",
+    "review": "Prüfen",
+    "title": "Mögliche Zuordnungen prüfen",
+    "description": "Die Synchronisierung war sich nicht sicher, ob es dieselbe Buchung ist. Zusammenführen behält Ihren Eintrag (Kategorie, Notizen) und übernimmt Betrag und Status der Bank; beide behalten lässt alles unverändert.",
+    "yours": "Ihr Eintrag",
+    "bank": "Von der Bank",
+    "keepBoth": "Verschiedene Buchungen",
+    "merge": "Dieselbe, zusammenführen",
+    "merged": "Zusammengeführt",
+    "kept": "Beide behalten",
+    "reason": {
+      "description": "Gleicher Betrag und nahes Datum, aber die Beschreibung ist anders.",
+      "amount": "Ähnliche Beschreibung und Datum, aber der Betrag weicht leicht ab.",
+      "ambiguous": "Mehrere Ihrer Einträge passen zu dieser Buchung."
+    }
   }
 }

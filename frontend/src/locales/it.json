@@ -3114,5 +3114,22 @@
       "recurring": "Regole Ricorrenti",
       "recurringHint": "Come decidiamo che un addebito è la bolletta che stavi già aspettando."
     }
+  },
+  "syncMatch": {
+    "banner": "Addebiti della banca da verificare: {{count}}. Potrebbero corrispondere a voci inserite da te.",
+    "review": "Verifica",
+    "title": "Verifica le possibili corrispondenze",
+    "description": "La sincronizzazione non era sicura che fosse lo stesso addebito. Unire mantiene la tua voce (categoria, note) e usa importo e stato della banca; mantenerle entrambe lascia tutto com'è.",
+    "yours": "La tua voce",
+    "bank": "Dalla banca",
+    "keepBoth": "Sono addebiti diversi",
+    "merge": "È lo stesso, unisci",
+    "merged": "Voci unite",
+    "kept": "Mantenute entrambe",
+    "reason": {
+      "description": "Stesso importo e data vicina, ma la descrizione è diversa.",
+      "amount": "Descrizione e data simili, ma l'importo è leggermente diverso.",
+      "ambiguous": "Più di una tua voce corrisponde a questo addebito."
+    }
   }
 }

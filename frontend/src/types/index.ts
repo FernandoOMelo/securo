@@ -228,6 +228,26 @@ export interface CreditCardBill {
   minimum_payment: number | null
 }
 
+export interface SyncMatchSide {
+  id: string
+  description: string
+  amount: number
+  currency: string
+  date: string // YYYY-MM-DD
+  status: string
+  source: string
+}
+
+/** A manual entry the bank sync thinks it has seen, waiting for a decision. */
+export interface SyncMatchSuggestion {
+  id: string
+  account_id: string
+  reason: 'description' | 'amount' | 'ambiguous'
+  score: number
+  manual: SyncMatchSide
+  synced: SyncMatchSide
+}
+
 export interface Collection {
   id: string
   user_id: string

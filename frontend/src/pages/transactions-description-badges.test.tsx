@@ -35,6 +35,7 @@ const api = vi.hoisted(() => ({
   groups: { get: vi.fn(), list: vi.fn() },
   rules: { create: vi.fn() },
   reconciliation: { suggestions: vi.fn() },
+  syncMatchSuggestions: { count: vi.fn().mockResolvedValue({ pending: 0 }) },
   currencies: { list: vi.fn() },
   settings: { attachments: vi.fn() },
 }))
@@ -50,6 +51,7 @@ vi.mock('@/lib/api', () => ({
   groups: api.groups,
   rules: api.rules,
   reconciliation: api.reconciliation,
+  syncMatchSuggestions: api.syncMatchSuggestions,
   currencies: api.currencies,
   settings: api.settings,
 }))

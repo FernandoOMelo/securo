@@ -3272,5 +3272,22 @@
       "recurring": "Pravidla opakovaných plateb",
       "recurringHint": "Jak určujeme, že odepsaná částka je účet, který jste už očekávali."
     }
+  },
+  "syncMatch": {
+    "banner": "Bankovní transakce ke kontrole: {{count}}. Mohou odpovídat záznamům, které jste zadali ručně.",
+    "review": "Zkontrolovat",
+    "title": "Zkontrolovat možné shody",
+    "description": "Synchronizace si nebyla jistá, že jde o stejnou transakci. Sloučení zachová váš záznam (kategorii, poznámky) a převezme částku a stav z banky; ponechání obou nechá vše beze změny.",
+    "yours": "Váš záznam",
+    "bank": "Z banky",
+    "keepBoth": "Jsou různé",
+    "merge": "Je to ta samá, sloučit",
+    "merged": "Sloučeno",
+    "kept": "Ponecháno obojí",
+    "reason": {
+      "description": "Stejná částka a blízké datum, ale popis je jiný.",
+      "amount": "Podobný popis a datum, ale částka se mírně liší.",
+      "ambiguous": "K této transakci pasuje více vašich záznamů."
+    }
   }
 }

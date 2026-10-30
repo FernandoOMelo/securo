@@ -3114,5 +3114,22 @@
       "recurring": "Regras de Recorrentes",
       "recurringHint": "Como decidimos que uma cobrança é a conta que já esperava."
     }
+  },
+  "syncMatch": {
+    "banner": "Movimentos do banco por rever: {{count}}. Podem corresponder a lançamentos que introduziu manualmente.",
+    "review": "Rever",
+    "title": "Rever possíveis correspondências",
+    "description": "A sincronização não tinha a certeza de que são o mesmo movimento. Unir mantém o seu lançamento (categoria, notas) e usa o valor e o estado do banco; manter ambos deixa tudo como está.",
+    "yours": "O seu lançamento",
+    "bank": "Do banco",
+    "keepBoth": "São movimentos diferentes",
+    "merge": "É o mesmo, unir",
+    "merged": "Lançamentos unidos",
+    "kept": "Mantidos ambos",
+    "reason": {
+      "description": "Mesmo valor e data próxima, mas a descrição é diferente.",
+      "amount": "Descrição e data parecidas, mas o valor é ligeiramente diferente.",
+      "ambiguous": "Mais do que um dos seus lançamentos corresponde a este movimento."
+    }
   }
 }

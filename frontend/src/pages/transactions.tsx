@@ -72,6 +72,7 @@ import { BulkAddToGroupDialog, type BulkAddToGroupSubmission } from '@/component
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { SyncMatchReview } from '@/components/sync-match-review'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
@@ -1467,6 +1468,8 @@ export default function TransactionsPage() {
           />
         }
       />
+
+      <SyncMatchReview canWrite={canWrite} />
 
       {/* Filters */}
       <TransactionsFilterBar

@@ -3110,5 +3110,22 @@
       "recurring": "Ismétlődési szabályok",
       "recurringHint": "Hogyan döntjük el, hogy egy terhelés az a számla, amelyre már számítottál."
     }
+  },
+  "syncMatch": {
+    "banner": "Ellenőrizendő banki tételek: {{count}}. Egyezhetnek az Ön által kézzel rögzített tételekkel.",
+    "review": "Ellenőrzés",
+    "title": "Lehetséges egyezések ellenőrzése",
+    "description": "A szinkronizálás nem volt biztos benne, hogy ugyanarról a tételről van szó. Az egyesítés megtartja az Ön tételét (kategória, jegyzetek), és átveszi a bank összegét és állapotát; ha mindkettőt megtartja, minden változatlan marad.",
+    "yours": "Az Ön tétele",
+    "bank": "A banktól",
+    "keepBoth": "Különböző tételek",
+    "merge": "Ugyanaz, egyesítés",
+    "merged": "Egyesítve",
+    "kept": "Mindkettő megmaradt",
+    "reason": {
+      "description": "Azonos összeg és közeli dátum, de a leírás eltér.",
+      "amount": "Hasonló leírás és dátum, de az összeg kissé eltér.",
+      "ambiguous": "Az Ön több tétele is illik ehhez a tételhez."
+    }
   }
 }

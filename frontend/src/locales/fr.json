@@ -3114,5 +3114,22 @@
       "recurring": "Règles Récurrentes",
       "recurringHint": "Comment nous décidons qu’un prélèvement est la facture que vous attendiez."
     }
+  },
+  "syncMatch": {
+    "banner": "Opérations bancaires à vérifier : {{count}}. Elles correspondent peut-être à des saisies manuelles.",
+    "review": "Vérifier",
+    "title": "Vérifier les correspondances possibles",
+    "description": "La synchronisation n'était pas sûre qu'il s'agisse de la même opération. Fusionner conserve votre saisie (catégorie, notes) et reprend le montant et le statut de la banque ; garder les deux laisse tout tel quel.",
+    "yours": "Votre saisie",
+    "bank": "De la banque",
+    "keepBoth": "Opérations différentes",
+    "merge": "C'est la même, fusionner",
+    "merged": "Opérations fusionnées",
+    "kept": "Les deux sont conservées",
+    "reason": {
+      "description": "Même montant et date proche, mais le libellé est différent.",
+      "amount": "Libellé et date proches, mais le montant diffère légèrement.",
+      "ambiguous": "Plusieurs de vos saisies correspondent à cette opération."
+    }
   }
 }

@@ -3114,5 +3114,22 @@
       "recurring": "Regras de Recorrentes",
       "recurringHint": "Como decidimos que uma cobrança é a conta que você já esperava."
     }
+  },
+  "syncMatch": {
+    "banner": "Cobranças do banco para revisar: {{count}}. Podem corresponder a lançamentos que você digitou.",
+    "review": "Revisar",
+    "title": "Revisar possíveis conciliações",
+    "description": "A sincronização não teve certeza de que são a mesma cobrança. Mesclar mantém o seu lançamento (categoria, notas) e usa o valor e o status do banco; manter os dois deixa tudo como está.",
+    "yours": "Seu lançamento",
+    "bank": "Do banco",
+    "keepBoth": "São cobranças diferentes",
+    "merge": "É a mesma, mesclar",
+    "merged": "Lançamentos mesclados",
+    "kept": "Mantidos os dois",
+    "reason": {
+      "description": "Mesmo valor e data próxima, mas a descrição é diferente.",
+      "amount": "Descrição e data parecidas, mas o valor é um pouco diferente.",
+      "ambiguous": "Mais de um dos seus lançamentos combina com esta cobrança."
+    }
   }
 }

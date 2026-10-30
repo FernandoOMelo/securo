@@ -3110,5 +3110,22 @@
       "recurring": "Recurring rules",
       "recurringHint": "How we decide that a charge is the bill you were already expecting."
     }
+  },
+  "syncMatch": {
+    "banner": "Bank charges to review: {{count}}. They may match entries you typed in.",
+    "review": "Review",
+    "title": "Review possible matches",
+    "description": "The bank sync was not sure these are the same charge. Merging keeps your entry (category, notes) and takes the bank's amount and status; keeping both leaves everything as it is.",
+    "yours": "Your entry",
+    "bank": "From the bank",
+    "keepBoth": "Different charges",
+    "merge": "Same charge, merge",
+    "merged": "Merged",
+    "kept": "Kept both",
+    "reason": {
+      "description": "Same amount and a close date, but the description is different.",
+      "amount": "Similar description and date, but the amount is a little different.",
+      "ambiguous": "More than one of your entries fit this charge."
+    }
   }
 }
