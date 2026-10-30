@@ -3159,6 +3159,9 @@
     "empty": "Nenhuma fatura encontrada. As faturas chegam pela sincronização do banco.",
     "dueOn": "Vence em {{date}}",
     "bankTotal": "Total do banco",
+    "estimated": "Estimada",
+    "estimatedHint": "O banco ainda não informou o total desta fatura. O valor é a soma dos lançamentos do ciclo.",
+    "noConference": "Sem conferência",
     "conference": "Conferência",
     "matches": "Confere com o app",
     "differs": "Diferença de {{value}}",
@@ -3200,9 +3203,10 @@
     },
     "cardsWidget": {
       "title": "Cartões de crédito",
-      "toPay": "A pagar nas próximas faturas:",
+      "toPay": "A pagar nas faturas deste mês:",
+      "noBills": "Nenhuma fatura vence neste mês.",
       "viewAll": "Ver todas as faturas",
-      "unpaidBefore": "Há fatura anterior sem pagamento identificado"
+      "unpaidInMonth": "Há fatura deste mês sem pagamento identificado"
     }
   }
 }

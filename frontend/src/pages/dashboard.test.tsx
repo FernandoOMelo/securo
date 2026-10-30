@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import DashboardPage from '@/pages/dashboard'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { formatCurrency } from '@/lib/format'
-import { monthLabel } from '@/lib/month-utils'
+import { currentMonth, monthLabel, shiftMonth } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
 
@@ -671,19 +671,55 @@ describe('Dashboard layout', () => {
     expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeDisabled()
   })
 
-  it('mostra o bloco Cartões quando há faturas', async () => {
+  const monthBill = (over: Record<string, unknown>) => ({
+    id: 'b1', account_id: 'c1', account_name: 'Itaú Visa', masked_number: '4711', currency: 'BRL',
+    due_date: `${currentMonth()}-20`, bank_total: 500, app_total: 500, difference: 0, matches: true,
+    transactions_count: 3, paid_amount: 0, status: 'open', payments: [], estimated: false, ...over,
+  })
+
+  it('mostra no bloco Cartões as faturas que vencem no mês do painel', async () => {
     api.creditCardBills.list.mockResolvedValue([
-      {
-        id: 'b1', account_id: 'c1', account_name: 'Itaú Visa', masked_number: '4711', currency: 'BRL',
-        due_date: '2999-01-20', bank_total: 500, app_total: 500, difference: 0, matches: true,
-        transactions_count: 3, paid_amount: 0, status: 'open', payments: [],
-      },
+      monthBill({}),
+      monthBill({ id: 'b0', account_id: 'c2', account_name: 'Nubank', due_date: `${shiftMonth(currentMonth(), -1)}-03` }),
     ])
 
     renderDashboard()
 
     expect(await screen.findByText('Cartões de crédito')).toBeInTheDocument()
-    expect(screen.getByText(/A pagar nas próximas faturas/)).toBeInTheDocument()
+    expect(screen.getByText(/A pagar nas faturas deste mês/)).toBeInTheDocument()
     expect(screen.getByText(/Itaú Visa/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nubank/)).not.toBeInTheDocument()
+  })
+
+  it('troca as faturas ao navegar para outro mês', async () => {
+    api.creditCardBills.list.mockResolvedValue([
+      monthBill({}),
+      monthBill({ id: 'b0', account_id: 'c2', account_name: 'Nubank', due_date: `${shiftMonth(currentMonth(), -1)}-03` }),
+    ])
+
+    const { user } = renderDashboard()
+    await screen.findByText(/Itaú Visa/)
+    await user.click(screen.getByText('‹'))
+
+    expect(await screen.findByText(/Nubank/)).toBeInTheDocument()
+    expect(screen.queryByText(/Itaú Visa/)).not.toBeInTheDocument()
+  })
+
+  it('avisa quando nenhuma fatura vence no mês, sem esconder o bloco', async () => {
+    api.creditCardBills.list.mockResolvedValue([
+      monthBill({ due_date: `${shiftMonth(currentMonth(), -3)}-20` }),
+    ])
+
+    renderDashboard()
+
+    expect(await screen.findByText('Nenhuma fatura vence neste mês.')).toBeInTheDocument()
+  })
+
+  it('marca a fatura estimada pelos lançamentos', async () => {
+    api.creditCardBills.list.mockResolvedValue([monthBill({ estimated: true })])
+
+    renderDashboard()
+
+    expect(await screen.findByText('Estimada')).toBeInTheDocument()
   })
 })

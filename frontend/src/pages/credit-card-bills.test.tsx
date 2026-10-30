@@ -31,6 +31,7 @@ const bill = (over: Partial<CreditCardBillSummary>): CreditCardBillSummary => ({
   transactions_count: 14,
   paid_amount: 1289.16,
   status: 'paid',
+  estimated: false,
   payments: [{ id: 'p1', date: '2026-10-19', description: 'Pagamento de fatura', amount: 1289.16 }],
   ...over,
 })
@@ -101,4 +102,17 @@ it('avisa quando não há faturas', async () => {
   renderWithProviders(<CreditCardBillsPage />)
 
   expect(await screen.findByText(/Nenhuma fatura encontrada/)).toBeInTheDocument()
+})
+
+it('marca como estimada a fatura que o banco ainda não totalizou', async () => {
+  vi.mocked(creditCardBills.list).mockResolvedValue([
+    bill({ estimated: true, matches: false, status: 'open', paid_amount: 0, payments: [] }),
+  ])
+
+  renderWithProviders(<CreditCardBillsPage />)
+
+  const row = await screen.findByTestId('card-bill')
+  expect(within(row).getByText('Estimada')).toBeInTheDocument()
+  expect(within(row).getByText('Sem conferência')).toBeInTheDocument()
+  expect(within(row).queryByText('Total do banco')).not.toBeInTheDocument()
 })

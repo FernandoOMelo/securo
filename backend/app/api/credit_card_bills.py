@@ -35,6 +35,7 @@ class BillSummaryRead(BaseModel):
     paid_amount: float
     status: str
     payments: list[BillPayment]
+    estimated: bool = False
 
 
 @router.get("", response_model=list[BillSummaryRead])
@@ -64,6 +65,7 @@ async def list_bills(
             transactions_count=s.transactions_count,
             paid_amount=float(s.paid_amount),
             status=s.status,
+            estimated=s.estimated,
             payments=[
                 BillPayment(id=p.id, date=p.date, description=p.description, amount=float(p.amount))
                 for p in s.payments

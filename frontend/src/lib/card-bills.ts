@@ -6,18 +6,17 @@ export const todayIso = () => {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/** A fatura que interessa de um cartão: a próxima a vencer, ou a última que existe. */
-export function pickBills(bills: CreditCardBillSummary[], today = todayIso()): CreditCardBillSummary[] {
-  const byCard = new Map<string, CreditCardBillSummary[]>()
-  for (const bill of bills) byCard.set(bill.account_id, [...(byCard.get(bill.account_id) ?? []), bill])
-
-  const picked: CreditCardBillSummary[] = []
-  for (const cardBills of byCard.values()) {
-    const sorted = [...cardBills].sort((a, b) => a.due_date.localeCompare(b.due_date))
-    const upcoming = sorted.find((bill) => bill.due_date >= today)
-    picked.push(upcoming ?? sorted[sorted.length - 1])
+/** As faturas que vencem no mês `yyyy-MM`: no máximo uma por cartão (a mais tardia). */
+export function billsDueIn(bills: CreditCardBillSummary[], month: string): CreditCardBillSummary[] {
+  const byCard = new Map<string, CreditCardBillSummary>()
+  for (const bill of bills) {
+    if (!bill.due_date.startsWith(month)) continue
+    const current = byCard.get(bill.account_id)
+    if (!current || bill.due_date > current.due_date) byCard.set(bill.account_id, bill)
   }
-  return picked.sort((a, b) => a.due_date.localeCompare(b.due_date) || a.account_name.localeCompare(b.account_name))
+  return [...byCard.values()].sort(
+    (a, b) => a.due_date.localeCompare(b.due_date) || a.account_name.localeCompare(b.account_name),
+  )
 }
 
 export function remainingToPay(bill: CreditCardBillSummary): number {

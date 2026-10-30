@@ -12,6 +12,8 @@ the bank itself categorized it that way, and it is attributed to the nearest
 bill by due date rather than to the bill row it happens to be linked to: some
 banks link a payment to the bill it settles, others to the next one.
 """
+import calendar
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -36,6 +38,11 @@ PAID_TOLERANCE = Decimal("0.05")
 MATCH_TOLERANCE = Decimal("0.01")
 #: Payments of the same amount this close together are one payment listed twice.
 TWIN_PAYMENT_DAYS = 3
+
+#: With no closing day on the card, the open bill is assumed to cover what was
+#: bought from this long before the last due date (cards close about a week ahead).
+OPEN_BILL_LOOKBACK_DAYS = 7
+_OPEN_BILL_NAMESPACE = uuid.UUID("5d1e9a52-0f55-4a5c-9a43-3b6f1e4f9c10")
 
 STATUS_PAID = "paid"
 STATUS_PARTIAL = "partial"
@@ -68,6 +75,24 @@ class BillSummary:
     paid_amount: Decimal
     status: str
     payments: list[PaymentRef] = field(default_factory=list)
+    #: The bank gave no usable total, so `bank_total` is worked out from the
+    #: charges the app holds. There is nothing to compare it against.
+    estimated: bool = False
+
+
+#: How banks word a bill payment on the card, for the rows that arrive without a
+#: transfer pair or a category (Itaú's "PAGAMENTO COM SALDO" is one).
+_PAYMENT_WORDING = (
+    "pagamento recebido",
+    "pagamento de fatura",
+    "pagamento fatura",
+    "pagamento com saldo",
+    "inclusao de pagamento",
+)
+
+
+def _plain(text: Optional[str]) -> str:
+    return unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode().lower()
 
 
 def is_bill_payment(tx: Transaction) -> bool:
@@ -81,6 +106,7 @@ def is_bill_payment(tx: Transaction) -> bool:
         tx.transfer_pair_id is not None
         or raw.get("category") == "Credit card payment"
         or raw.get("operationType") == "PAGAMENTO_FATURA"
+        or any(wording in _plain(tx.description) for wording in _PAYMENT_WORDING)
     )
 
 
@@ -112,6 +138,34 @@ def _drop_twin_payments(payments: list[Transaction]) -> list[Transaction]:
     return kept
 
 
+def _clamp_day(year: int, month: int, day: int) -> date:
+    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+
+def _next_due_date(last_due: date, due_day: int, today: date) -> date:
+    """The first due date after `last_due` that is not already in the past."""
+    year, month = last_due.year, last_due.month
+    while True:
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+        candidate = _clamp_day(year, month, due_day)
+        if candidate > last_due and candidate >= today:
+            return candidate
+
+
+def _open_bill_start(last_due: date, close_day: Optional[int]) -> date:
+    """First day of the cycle that no bank bill covers yet."""
+    if close_day:
+        close = _clamp_day(last_due.year, last_due.month, close_day)
+        if close > last_due:
+            month = last_due.month - 1 or 12
+            year = last_due.year - 1 if last_due.month == 1 else last_due.year
+            close = _clamp_day(year, month, close_day)
+        return close
+    return last_due - timedelta(days=OPEN_BILL_LOOKBACK_DAYS)
+
+
 def _status(total: Decimal, paid: Decimal, due: date, today: date) -> str:
     if total <= MATCH_TOLERANCE:
         return STATUS_ZERO
@@ -139,6 +193,59 @@ def _attribute_payments(
         if best is not None:
             assigned[best.id].append(payment)
     return assigned
+
+
+async def _open_bill(
+    session: AsyncSession, account: Account, bills: list[CreditCardBill], today: date
+) -> Optional[BillSummary]:
+    """The bill that is still being filled, when the bank has not sent it yet.
+
+    Banks send a bill once it closes, so right after one is due there is no row
+    for the next. What the card owes meanwhile is what was charged and not yet
+    on any bill. Stale pending rows and installments dated ahead are left out.
+    """
+    if not account.payment_due_day:
+        return None
+    newest = max(bills, key=lambda bill: bill.due_date)
+    if newest.due_date >= today:
+        return None
+
+    start = _open_bill_start(newest.due_date, account.statement_close_day)
+    rows = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.account_id == account.id,
+                Transaction.bill_id.is_(None),
+                Transaction.is_ignored.is_(False),
+                Transaction.source != "opening_balance",
+                Transaction.date >= start,
+                Transaction.date <= today,
+            )
+        )
+    ).scalars().all()
+    charged = [tx for tx in rows if not is_bill_payment(tx)]
+    total = sum((tx.amount for tx in charged if tx.type == "debit"), Decimal("0")) - sum(
+        (tx.amount for tx in charged if tx.type == "credit"), Decimal("0")
+    )
+    # Credits beyond the charges leave a balance in the card's favour, not a negative bill.
+    total = max(total, Decimal("0"))
+    due = _next_due_date(newest.due_date, account.payment_due_day, today)
+    return BillSummary(
+        id=uuid.uuid5(_OPEN_BILL_NAMESPACE, str(account.id)),
+        account_id=account.id,
+        account_name=account.display_name or account.name,
+        masked_number=account.masked_number,
+        currency=newest.currency,
+        due_date=due,
+        bank_total=total,
+        app_total=total,
+        difference=Decimal("0"),
+        matches=False,
+        transactions_count=len(charged),
+        paid_amount=Decimal("0"),
+        status=_status(total, Decimal("0"), due, today),
+        estimated=True,
+    )
 
 
 async def summarize_bills(
@@ -210,7 +317,12 @@ async def summarize_bills(
             app_total = charges - refunds
             paid_txs = sorted(attributed[bill.id], key=lambda tx: tx.date)
             paid = sum((tx.amount for tx in paid_txs), Decimal("0"))
-            difference = bill.total_amount - app_total
+            # A bank that reports zero for a bill that has charges has not filled
+            # the total in (Mercado Pago does, for a bill it already closed): the
+            # charges are the best figure there is, and they are said to be one.
+            estimated = bill.total_amount <= MATCH_TOLERANCE and app_total > MATCH_TOLERANCE
+            total = app_total if estimated else bill.total_amount
+            difference = Decimal("0") if estimated else bill.total_amount - app_total
             summaries.append(
                 BillSummary(
                     id=bill.id,
@@ -219,17 +331,22 @@ async def summarize_bills(
                     masked_number=account.masked_number,
                     currency=bill.currency,
                     due_date=bill.due_date,
-                    bank_total=bill.total_amount,
+                    bank_total=total,
                     app_total=app_total,
                     difference=difference,
-                    matches=abs(difference) < MATCH_TOLERANCE,
+                    matches=not estimated and abs(difference) < MATCH_TOLERANCE,
                     transactions_count=len(linked),
                     paid_amount=paid,
-                    status=_status(bill.total_amount, paid, bill.due_date, today),
+                    status=_status(total, paid, bill.due_date, today),
                     payments=[
                         PaymentRef(tx.id, tx.date, tx.description, tx.amount) for tx in paid_txs
                     ],
+                    estimated=estimated,
                 )
             )
+
+        open_bill = await _open_bill(session, account, bills, today)
+        if open_bill is not None:
+            summaries.append(open_bill)
     summaries.sort(key=lambda s: (s.due_date, s.account_name), reverse=True)
     return summaries

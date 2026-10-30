@@ -15,10 +15,10 @@ from app.services import bill_summary_service as svc
 TODAY = date(2026, 10, 29)
 
 
-async def _card(session, user, name="Visa"):
+async def _card(session, user, name="Visa", **extra):
     account = Account(
         id=uuid.uuid4(), user_id=user.id, name=name, type="credit_card",
-        balance=Decimal("0"), currency="BRL", masked_number="4711",
+        balance=Decimal("0"), currency="BRL", masked_number="4711", **extra,
     )
     session.add(account)
     await session.flush()
@@ -61,6 +61,10 @@ def test_payment_detection():
     # a refund is not a payment, even if something paired it by accident
     assert not svc.is_bill_payment(_payment_tx(raw={"operationType": "ESTORNO"}, pair=uuid.uuid4()))
     assert not svc.is_bill_payment(_payment_tx())
+    # a payment that arrives with no pair and no category is told by its wording
+    for wording in ("PAGAMENTO COM SALDO", "Pagamento recebido", "Inclusão de Pagamento Ciclo Corrente"):
+        assert svc.is_bill_payment(Transaction(type="credit", description=wording))
+    assert not svc.is_bill_payment(Transaction(type="credit", description="Estorno de Uber - NuPay"))
     assert not svc.is_bill_payment(Transaction(type="debit", transfer_pair_id=uuid.uuid4()))
 
 
@@ -262,3 +266,149 @@ async def test_payments_of_different_amounts_are_both_counted(
     [summary] = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
 
     assert summary.paid_amount == Decimal("400.00") and summary.status == svc.STATUS_PAID
+
+
+# ---------------------------------------------------------------------------
+# Total the bank left at zero, and the bill nobody has sent yet
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_zero_total_with_charges_is_estimated_from_the_charges(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Mercado Pago reports 0,00 for a bill that has 40 charges and was paid."""
+    card = await _card(session, test_user)
+    bill = await _bill(session, test_user, card, date(2026, 10, 7), "0.00")
+    await _tx(session, test_user, card, day=date(2026, 9, 20), amount="700.00", bill=bill)
+    await _tx(session, test_user, card, day=date(2026, 9, 25), amount="534.94", bill=bill)
+    await _tx(session, test_user, card, day=date(2026, 10, 1), amount="1234.94", type="credit",
+              pair=uuid.uuid4())
+
+    [summary] = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+
+    assert summary.estimated
+    assert summary.bank_total == Decimal("1234.94")
+    assert summary.status == svc.STATUS_PAID
+    assert not summary.matches and summary.difference == 0
+
+
+@pytest.mark.asyncio
+async def test_a_real_zero_bill_stays_zero(session: AsyncSession, test_user, test_workspace):
+    card = await _card(session, test_user)
+    await _bill(session, test_user, card, date(2026, 10, 7), "0.00")
+
+    [summary] = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+
+    assert not summary.estimated and summary.status == svc.STATUS_ZERO
+
+
+@pytest.mark.asyncio
+async def test_open_bill_is_estimated_from_unbilled_charges(
+    session: AsyncSession, test_user, test_workspace
+):
+    card = await _card(session, test_user, payment_due_day=7)
+    await _bill(session, test_user, card, date(2026, 10, 7), "100.00")
+    kept = [
+        dict(day=date(2026, 10, 2), amount="50.00"),
+        dict(day=date(2026, 10, 20), amount="30.00"),
+        dict(day=date(2026, 10, 21), amount="10.00", type="credit"),  # a refund reduces it
+    ]
+    for kw in kept:
+        await _tx(session, test_user, card, **kw)
+    # none of these belong to the open bill
+    await _tx(session, test_user, card, day=date(2026, 9, 1), amount="999.00")  # stale
+    await _tx(session, test_user, card, day=date(2026, 11, 27), amount="200.00")  # dated ahead
+    await _tx(session, test_user, card, day=date(2026, 10, 25), amount="400.00", type="credit",
+              pair=uuid.uuid4())  # a payment, of the previous bill
+    await _tx(session, test_user, card, day=date(2026, 10, 10), amount="77.00", ignored=True)
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+    open_bill = next(s for s in summaries if s.estimated)
+
+    assert open_bill.due_date == date(2026, 11, 7)
+    assert open_bill.bank_total == Decimal("70.00")
+    assert open_bill.transactions_count == 3
+    assert open_bill.status == svc.STATUS_OPEN
+    assert open_bill.payments == []
+    assert len(summaries) == 2  # the bank's bill is still there
+
+
+@pytest.mark.asyncio
+async def test_no_open_bill_when_the_bank_already_sent_the_next_one(
+    session: AsyncSession, test_user, test_workspace
+):
+    card = await _card(session, test_user, payment_due_day=7)
+    await _bill(session, test_user, card, date(2026, 11, 7), "100.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 20), amount="30.00")
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+
+    assert [s.estimated for s in summaries] == [False]
+
+
+@pytest.mark.asyncio
+async def test_no_open_bill_without_a_due_day(session: AsyncSession, test_user, test_workspace):
+    card = await _card(session, test_user)
+    await _bill(session, test_user, card, date(2026, 10, 7), "100.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 20), amount="30.00")
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+
+    assert [s.estimated for s in summaries] == [False]
+
+
+@pytest.mark.asyncio
+async def test_open_bill_starts_on_the_closing_day_when_the_card_has_one(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Itaú closes on the 15th and is due on the 21st: a purchase on the 14th is the old bill's."""
+    card = await _card(session, test_user, payment_due_day=21, statement_close_day=15)
+    await _bill(session, test_user, card, date(2026, 10, 21), "100.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 14), amount="40.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 15), amount="25.00")
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+    open_bill = next(s for s in summaries if s.estimated)
+
+    assert open_bill.due_date == date(2026, 11, 21)
+    assert open_bill.bank_total == Decimal("25.00")
+
+
+def test_next_due_date_clamps_to_the_end_of_the_month():
+    assert svc._next_due_date(date(2026, 1, 31), 31, date(2026, 1, 31)) == date(2026, 2, 28)
+    assert svc._next_due_date(date(2026, 12, 7), 7, date(2026, 12, 8)) == date(2027, 1, 7)
+
+
+def test_next_due_date_skips_months_already_gone():
+    assert svc._next_due_date(date(2026, 6, 7), 7, date(2026, 10, 29)) == date(2026, 11, 7)
+
+
+@pytest.mark.asyncio
+async def test_open_bill_is_never_negative(session: AsyncSession, test_user, test_workspace):
+    card = await _card(session, test_user, payment_due_day=7)
+    await _bill(session, test_user, card, date(2026, 10, 7), "100.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 20), amount="40.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 21), amount="300.00", type="credit",
+              description="Crédito promocional")  # not a payment, just a credit
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+    open_bill = next(s for s in summaries if s.estimated)
+
+    assert open_bill.bank_total == Decimal("0")
+    assert open_bill.status == svc.STATUS_ZERO
+
+
+@pytest.mark.asyncio
+async def test_unpaired_payment_by_wording_is_left_out_of_the_open_bill(
+    session: AsyncSession, test_user, test_workspace
+):
+    card = await _card(session, test_user, payment_due_day=7)
+    await _bill(session, test_user, card, date(2026, 10, 7), "100.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 20), amount="40.00")
+    await _tx(session, test_user, card, day=date(2026, 10, 20), amount="1289.16", type="credit",
+              description="PAGAMENTO COM SALDO", raw={"operationType": "OUTROS", "category": "Transfers"})
+
+    summaries = await svc.summarize_bills(session, test_workspace.id, today=TODAY)
+
+    assert next(s for s in summaries if s.estimated).bank_total == Decimal("40.00")

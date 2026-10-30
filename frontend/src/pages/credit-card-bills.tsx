@@ -121,12 +121,18 @@ function BillCard({ bill }: { bill: CreditCardBillSummary }) {
           <p className="text-sm text-muted-foreground">{t('cardBills.dueOn', { date: due })}</p>
         </div>
         <div className="min-w-[7rem]">
-          <p className="text-xs text-muted-foreground">{t('cardBills.bankTotal')}</p>
+          <p className="text-xs text-muted-foreground">
+            {bill.estimated ? t('cardBills.estimated') : t('cardBills.bankTotal')}
+          </p>
           <p className="font-medium tabular-nums">{money(bill.bank_total, bill.currency)}</p>
         </div>
         <div className="min-w-[9rem]">
           <p className="text-xs text-muted-foreground">{t('cardBills.conference')}</p>
-          {bill.matches ? (
+          {bill.estimated ? (
+            <p className="text-sm text-muted-foreground" title={t('cardBills.estimatedHint')}>
+              {t('cardBills.noConference')}
+            </p>
+          ) : bill.matches ? (
             <p className="flex items-center gap-1 text-sm text-emerald-600 dark:text-emerald-400">
               <CircleCheck size={14} aria-hidden /> {t('cardBills.matches')}
             </p>

@@ -986,7 +986,7 @@ export default function DashboardPage() {
       </div>
       </>
     ),
-    cards: <DashboardCardsWidget />,
+    cards: <DashboardCardsWidget month={selectedMonth} />,
     uncategorized: (
       <>
       {/* Uncategorized banner */}

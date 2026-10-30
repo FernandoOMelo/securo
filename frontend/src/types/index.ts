@@ -255,6 +255,8 @@ export interface CreditCardBillSummary {
   paid_amount: number
   status: BillStatus
   payments: BillPayment[]
+  /** O banco não informou o total: `bank_total` é a soma dos lançamentos. */
+  estimated: boolean
 }
 
 export interface SyncMatchSide {
