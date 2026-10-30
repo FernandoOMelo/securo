@@ -30,6 +30,13 @@ const api = vi.hoisted(() => ({
   payees: { list: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  creditCardBills: { list: vi.fn() },
+  auth: { updateMe: vi.fn() },
+}))
+
+const session = vi.hoisted(() => ({
+  preferences: {} as Record<string, unknown>,
+  updateUser: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -44,7 +51,12 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+  useAuth: () => ({ user: { preferences: session.preferences }, updateUser: session.updateUser }),
+}))
+
+vi.mock('@/contexts/workspace-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/contexts/workspace-context')>()),
+  useWorkspace: () => ({ current: { id: 'ws-1', name: 'Família' } }),
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -129,6 +141,9 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  session.preferences = { currency_display: 'USD' }
+  api.creditCardBills.list.mockResolvedValue([])
+  api.auth.updateMe.mockImplementation(async (body: unknown) => body)
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.balanceHistory.mockResolvedValue({
@@ -579,5 +594,96 @@ describe('Dashboard refresh button', () => {
       '2026-04-01', undefined, ['2026-02-01'],
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
+  })
+})
+
+
+describe('Dashboard layout', () => {
+  const widgetIds = () =>
+    [...document.querySelectorAll('[data-widget]')].map((node) => node.getAttribute('data-widget'))
+
+  const renderDashboard = () =>
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+  it('mostra os blocos na ordem padrão quando nada foi salvo', async () => {
+    renderDashboard()
+
+    await waitFor(() => expect(widgetIds().length).toBeGreaterThan(0))
+    expect(widgetIds()).toEqual([
+      'overview', 'cards', 'uncategorized', 'categories', 'evolution', 'goals', 'transactions',
+    ])
+  })
+
+  it('respeita a ordem e a visibilidade salvas para o workspace', async () => {
+    session.preferences = {
+      currency_display: 'USD',
+      dashboard_layouts: {
+        'ws-1': [
+          { id: 'transactions', visible: true, width: 'full' },
+          { id: 'overview', visible: false, width: 'full' },
+        ],
+      },
+    }
+
+    renderDashboard()
+
+    await waitFor(() => expect(widgetIds().length).toBeGreaterThan(0))
+    expect(widgetIds()[0]).toBe('transactions')
+    expect(widgetIds()).not.toContain('overview')
+  })
+
+  it('ignora o layout salvo de outro workspace', async () => {
+    session.preferences = {
+      currency_display: 'USD',
+      dashboard_layouts: { 'outro-ws': [{ id: 'goals', visible: false, width: 'full' }] },
+    }
+
+    renderDashboard()
+
+    await waitFor(() => expect(widgetIds()).toContain('goals'))
+  })
+
+  it('salva o layout escolhido no workspace atual, sem perder as outras preferências', async () => {
+    const { user } = renderDashboard()
+
+    await user.click(await screen.findByRole('button', { name: 'Personalizar o painel' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('switch', { name: 'Objetivos' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(api.auth.updateMe).toHaveBeenCalled())
+    const sent = api.auth.updateMe.mock.calls[0][0].preferences
+    expect(sent.currency_display).toBe('USD')
+    expect(sent.dashboard_layouts['ws-1'].find((entry: { id: string }) => entry.id === 'goals').visible).toBe(false)
+    await waitFor(() => expect(session.updateUser).toHaveBeenCalled())
+  })
+
+  it('o botão Salvar só liga depois de uma mudança', async () => {
+    const { user } = renderDashboard()
+
+    await user.click(await screen.findByRole('button', { name: 'Personalizar o painel' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('button', { name: 'Salvar' })).toBeDisabled()
+  })
+
+  it('mostra o bloco Cartões quando há faturas', async () => {
+    api.creditCardBills.list.mockResolvedValue([
+      {
+        id: 'b1', account_id: 'c1', account_name: 'Itaú Visa', masked_number: '4711', currency: 'BRL',
+        due_date: '2999-01-20', bank_total: 500, app_total: 500, difference: 0, matches: true,
+        transactions_count: 3, paid_amount: 0, status: 'open', payments: [],
+      },
+    ])
+
+    renderDashboard()
+
+    expect(await screen.findByText('Cartões de crédito')).toBeInTheDocument()
+    expect(screen.getByText(/A pagar nas próximas faturas/)).toBeInTheDocument()
+    expect(screen.getByText(/Itaú Visa/)).toBeInTheDocument()
   })
 })

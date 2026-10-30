@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi, auth as authApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -38,7 +38,12 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle, SlidersHorizontal } from 'lucide-react'
+import { layoutFor, type DashboardLayout, type WidgetId } from '@/lib/dashboard-layout'
+import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/contexts/workspace-context'
+import { DashboardCustomizer } from '@/components/dashboard-customizer'
+import { DashboardCardsWidget } from '@/components/dashboard-cards-widget'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -113,7 +118,30 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const isMobile = useIsMobile()
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
+  const { current: workspace } = useWorkspace()
+  const layout = useMemo(
+    () => layoutFor(user?.preferences?.dashboard_layouts, workspace?.id),
+    [user?.preferences?.dashboard_layouts, workspace?.id],
+  )
+  const [customizerOpen, setCustomizerOpen] = useState(false)
+  const saveLayout = useMutation({
+    mutationFn: (next: DashboardLayout) => {
+      if (!workspace) throw new Error('Nenhum workspace ativo')
+      return authApi.updateMe({
+        preferences: {
+          ...(user?.preferences ?? {}),
+          dashboard_layouts: { ...(user?.preferences?.dashboard_layouts ?? {}), [workspace.id]: next },
+        },
+      })
+    },
+    onSuccess: (updated) => {
+      updateUser(updated)
+      setCustomizerOpen(false)
+      toast.success(t('dashboardLayout.saved'))
+    },
+    onError: () => toast.error(t('dashboardLayout.saveError')),
+  })
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
@@ -722,55 +750,13 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
-  return (
-    <div>
-      {/* Header */}
-      <PageHeader
-        section={greeting}
-        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-        action={
-          <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
-            >&#8249;</button>
-            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <MonthPicker
-                  locale={dateFnsLocale}
-                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onMonthSelect={(date) => {
-                    if (!date) return
-                    const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
-                    setHeaderCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
-            >&#8250;</button>
-            <PageRefreshButton
-              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
-              refreshing={summaryFetching}
-            />
-          </div>
-        }
-      />
-
+  // Cada bloco do painel. A ordem, a visibilidade e a largura vêm do layout
+  // salvo; os blocos continuam aqui dentro porque dependem do estado da página.
+  const widgets: Record<WidgetId, ReactNode> = {
+    overview: (
+      <>
       {/* Hero Card: Available Balance + secondary indicators */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
+      <div className="bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
@@ -998,13 +984,17 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
-
+      </>
+    ),
+    cards: <DashboardCardsWidget />,
+    uncategorized: (
+      <>
       {/* Uncategorized banner */}
       {!summaryLoading && (
         uncategorizedCount > 0 ? (
           <button
             type="button"
-            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
@@ -1030,17 +1020,18 @@ export default function DashboardPage() {
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
             <span className="text-sm text-emerald-900 dark:text-emerald-200">{t('dashboard.allCategorized')}</span>
           </div>
         )
       )}
-
-      {/* Charts: Category Spending Bars + Balance Evolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
+      </>
+    ),
+    categories: (
+      <>
         {/* Category Spending Bars */}
-        <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
+        <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col h-full min-h-[380px] max-h-[420px]">
           <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
             <button
@@ -1119,9 +1110,12 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-
+      </>
+    ),
+    evolution: (
+      <>
         {/* Cumulative Spending Comparison */}
-        <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
+        <div className="bg-card rounded-xl border border-border shadow-sm h-full min-h-[380px] max-h-[420px] flex flex-col">
           <div className="px-5 pt-5 pb-3 shrink-0">
             <div className="flex items-start justify-between mb-0.5">
               <div>
@@ -1382,11 +1376,13 @@ export default function DashboardPage() {
             )
           })()}
         </div>
-      </div>
-
+      </>
+    ),
+    goals: (
+      <>
       {/* Goals Progress Widget */}
       {goalsSummary && goalsSummary.length > 0 && (
-        <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
+        <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
             <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
@@ -1454,7 +1450,10 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
+      </>
+    ),
+    transactions: (
+      <>
       {/* Period Transactions */}
       <div>
         {/* One control bar for both views, so the switch never moves between them. */}
@@ -1789,6 +1788,86 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+      </>
+    ),
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <PageHeader
+        section={greeting}
+        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+        action={
+          <div className="flex items-center gap-1">
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
+            >&#8249;</button>
+            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
+                >
+                  <CalendarIcon className="size-3.5 text-muted-foreground" />
+                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="center" className="w-auto p-0">
+                <MonthPicker
+                  locale={dateFnsLocale}
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
+                    if (!date) return
+                    const newMonth = format(date, 'yyyy-MM')
+                    setSelectedMonth(newMonth)
+                    setHeaderCalOpen(false)
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
+            >&#8250;</button>
+            <button
+              type="button"
+              aria-label={t('dashboardLayout.customize')}
+              title={t('dashboardLayout.customize')}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-all"
+              onClick={() => setCustomizerOpen(true)}
+            >
+              <SlidersHorizontal size={14} aria-hidden />
+            </button>
+            <PageRefreshButton
+              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+              refreshing={summaryFetching}
+            />
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 mb-5">
+        {layout.filter((entry) => entry.visible).map((entry) => (
+          <div
+            key={entry.id}
+            data-widget={entry.id}
+            className={cn('min-w-0 empty:hidden', entry.width === 'full' && 'lg:col-span-2')}
+          >
+            {widgets[entry.id]}
+          </div>
+        ))}
+      </div>
+
+      <DashboardCustomizer
+        open={customizerOpen}
+        onOpenChange={setCustomizerOpen}
+        layout={layout}
+        workspaceName={workspace?.name ?? ''}
+        saving={saveLayout.isPending}
+        onSave={(next) => saveLayout.mutate(next)}
+      />
 
       <TransactionDrillDown
         filter={

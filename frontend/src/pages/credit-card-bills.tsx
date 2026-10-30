@@ -17,15 +17,8 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { BillStatus, CreditCardBillSummary } from '@/types'
-
-const STATUS_TONE: Record<BillStatus, string> = {
-  paid: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  partial: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-  open: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-  unpaid: 'bg-rose-500/15 text-rose-600 dark:text-rose-400',
-  zero: 'bg-muted text-muted-foreground',
-}
+import { BillStatusBadge } from '@/components/bill-status-badge'
+import type { CreditCardBillSummary } from '@/types'
 
 function useMoney() {
   const locale = useDisplayLocale()
@@ -151,9 +144,7 @@ function BillCard({ bill }: { bill: CreditCardBillSummary }) {
           )}
         </div>
         <div className="min-w-[9rem]">
-          <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-medium', STATUS_TONE[bill.status])}>
-            {t(`cardBills.status.${bill.status}`)}
-          </span>
+          <BillStatusBadge status={bill.status} />
           {payment && <p className="mt-0.5 text-xs text-muted-foreground">{payment}</p>}
         </div>
       </button>

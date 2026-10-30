@@ -87,6 +87,8 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  /** Layout do painel por workspace: { [workspaceId]: lista de blocos }. */
+  dashboard_layouts?: Record<string, unknown>
 }
 
 export interface Category {

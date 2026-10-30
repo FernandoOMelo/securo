@@ -3302,5 +3302,34 @@
       "unpaid": "Sem pagamento identificado",
       "zero": "Sem valor"
     }
+  },
+  "dashboardLayout": {
+    "customize": "Personalizar o painel",
+    "title": "Personalizar o painel",
+    "hint": "Escolha o que aparece, a ordem e a largura de cada bloco. Vale para o workspace “{{name}}”.",
+    "moveUp": "Subir {{name}}",
+    "moveDown": "Descer {{name}}",
+    "widthHalf": "Metade",
+    "widthFull": "Total",
+    "reset": "Restaurar padrão",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "saved": "Painel atualizado",
+    "saveError": "Não foi possível salvar o painel.",
+    "widgets": {
+      "overview": "Visão geral",
+      "cards": "Cartões",
+      "uncategorized": "Aviso de sem categoria",
+      "categories": "Gastos por categoria",
+      "evolution": "Evolução dos gastos",
+      "goals": "Objetivos",
+      "transactions": "Lançamentos do período"
+    },
+    "cardsWidget": {
+      "title": "Cartões de crédito",
+      "toPay": "A pagar nas próximas faturas:",
+      "viewAll": "Ver todas as faturas",
+      "unpaidBefore": "Há fatura anterior sem pagamento identificado"
+    }
   }
 }
