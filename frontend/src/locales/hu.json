@@ -3127,5 +3127,34 @@
       "amount": "Hasonló leírás és dátum, de az összeg kissé eltér.",
       "ambiguous": "Az Ön több tétele is illik ehhez a tételhez."
     }
+  },
+  "cardBills": {
+    "section": "Cartões",
+    "title": "Faturas dos cartões",
+    "card": "Cartão",
+    "allCards": "Todos os cartões",
+    "backToAccounts": "Voltar às contas",
+    "openFromAccounts": "Faturas dos cartões",
+    "loading": "Carregando…",
+    "error": "Não foi possível carregar as faturas.",
+    "empty": "Nenhuma fatura encontrada. As faturas chegam pela sincronização do banco.",
+    "dueOn": "Vence em {{date}}",
+    "bankTotal": "Total do banco",
+    "conference": "Conferência",
+    "matches": "Confere com o app",
+    "differs": "Diferença de {{value}}",
+    "differsHint": "Banco {{bank}} · App {{app}}. A diferença costuma vir de lançamentos anteriores à sincronização, parcelas ou encargos.",
+    "paidOn": "Paga em {{date}}",
+    "paidPart": "{{paid}} de {{total}}",
+    "payments": "Pagamentos identificados",
+    "charges": "Lançamentos da fatura",
+    "noCharges": "Nenhum lançamento ligado a esta fatura.",
+    "status": {
+      "paid": "Paga",
+      "partial": "Paga em parte",
+      "open": "A vencer",
+      "unpaid": "Sem pagamento identificado",
+      "zero": "Sem valor"
+    }
   }
 }

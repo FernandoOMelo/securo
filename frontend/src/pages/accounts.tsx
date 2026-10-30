@@ -248,6 +248,9 @@ export default function AccountsPage() {
         title={t('accounts.title')}
         action={
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/faturas">{t('cardBills.openFromAccounts')}</Link>
+            </Button>
             <PageRefreshButton
               onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
               refreshing={accountsFetching}

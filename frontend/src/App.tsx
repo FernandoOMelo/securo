@@ -21,6 +21,7 @@ const RegisterPage = lazy(() => import('@/pages/register'))
 const DashboardPage = lazy(() => import('@/pages/dashboard'))
 const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
+const CreditCardBillsPage = lazy(() => import('@/pages/credit-card-bills'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
 const RulesPage = lazy(() => import('@/pages/rules'))
@@ -110,6 +111,7 @@ function App() {
                   <Route path="/transactions" element={<ModuleRoute module="transactions"><TransactionsPage /></ModuleRoute>} />
                   <Route path="/accounts" element={<ModuleRoute module="accounts"><AccountsPage /></ModuleRoute>} />
                   <Route path="/accounts/:id" element={<ModuleRoute module="accounts"><AccountDetailPage /></ModuleRoute>} />
+                  <Route path="/faturas" element={<ModuleRoute module="accounts"><CreditCardBillsPage /></ModuleRoute>} />
                   <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
                   <Route path="/enable-banking" element={<OAuthCallbackPage />} />
                   <Route path="/import" element={<ModuleRoute module="import"><ImportPage /></ModuleRoute>} />

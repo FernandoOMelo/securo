@@ -39,6 +39,7 @@ from app.api.invoice_schedules import router as invoice_schedules_router
 from app.api.invoices import router as invoices_router
 from app.api.mortgage_payments import router as mortgage_payments_router
 from app.api.sync_match_suggestions import router as sync_match_suggestions_router
+from app.api.credit_card_bills import router as credit_card_bills_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
 from app.api.payees import router as payees_router
@@ -179,6 +180,7 @@ app.include_router(reconciliation_router)
 app.include_router(transactions_router)
 app.include_router(mortgage_payments_router)
 app.include_router(sync_match_suggestions_router)
+app.include_router(credit_card_bills_router)
 app.include_router(import_router)
 app.include_router(import_logs_router)
 app.include_router(accounts_router)

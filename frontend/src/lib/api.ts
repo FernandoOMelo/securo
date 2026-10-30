@@ -22,6 +22,7 @@ import type {
   Collection,
   CreditCardBill,
   SyncMatchSuggestion,
+  CreditCardBillSummary,
   LoanBalanceAdjustment,
   LoanBalanceUpdate,
   LoanSchedule,
@@ -561,6 +562,15 @@ export interface MortgagePaymentAllocation {
   interest_percentage: number
   historical: boolean
   bank_managed: boolean
+}
+
+export const creditCardBills = {
+  list: async (accountId?: string, limitPerAccount = 24): Promise<CreditCardBillSummary[]> => {
+    const { data } = await api.get('/credit-card-bills', {
+      params: { account_id: accountId, limit_per_account: limitPerAccount },
+    })
+    return data
+  },
 }
 
 export const syncMatchSuggestions = {

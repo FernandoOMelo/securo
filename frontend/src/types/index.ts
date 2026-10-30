@@ -228,6 +228,33 @@ export interface CreditCardBill {
   minimum_payment: number | null
 }
 
+export interface BillPayment {
+  id: string
+  date: string // YYYY-MM-DD
+  description: string
+  amount: number
+}
+
+export type BillStatus = 'paid' | 'partial' | 'open' | 'unpaid' | 'zero'
+
+/** A card bill with the bank's total, what the app holds, and the payments found. */
+export interface CreditCardBillSummary {
+  id: string
+  account_id: string
+  account_name: string
+  masked_number: string | null
+  currency: string
+  due_date: string // YYYY-MM-DD
+  bank_total: number
+  app_total: number
+  difference: number
+  matches: boolean
+  transactions_count: number
+  paid_amount: number
+  status: BillStatus
+  payments: BillPayment[]
+}
+
 export interface SyncMatchSide {
   id: string
   description: string
