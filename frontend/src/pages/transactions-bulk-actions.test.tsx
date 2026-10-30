@@ -30,6 +30,7 @@ const api = vi.hoisted(() => ({
   currencies: { list: vi.fn() },
   settings: { attachments: vi.fn() },
   auth: { updateMe: vi.fn() },
+  creditCardBills: { list: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -103,6 +104,7 @@ beforeEach(() => {
   api.syncMatchSuggestions.count.mockResolvedValue({ pending: 0 })
   api.currencies.list.mockResolvedValue([])
   api.settings.attachments.mockResolvedValue(false)
+  api.creditCardBills.list.mockResolvedValue([])
 })
 
 async function selectTwoRows() {
@@ -153,5 +155,40 @@ describe('filtros salvos', () => {
     await waitFor(() =>
       expect(api.transactions.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'pending' })),
     )
+  })
+})
+
+describe('faturas na lista', () => {
+  const openBill = {
+    id: 'fat1', account_id: 'card', account_name: 'Cartão Itaú', masked_number: null, currency: 'BRL',
+    due_date: '2026-10-08', bank_total: 1234.5, app_total: 1234.5, difference: 0, matches: true,
+    transactions_count: 3, paid_amount: 0, status: 'open', payments: [], estimated: true,
+  }
+
+  it('mostra a fatura na data de vencimento, com valor e situação', async () => {
+    api.creditCardBills.list.mockResolvedValue([openBill])
+    renderWithProviders(<TransactionsPage />, { route: '/transactions?from=2026-10-01&to=2026-10-31', path: '/transactions' })
+
+    const row = await screen.findByTestId('bill-row')
+
+    expect(within(row).getByText('Fatura Cartão Itaú')).toBeInTheDocument()
+    expect(within(row).getByText('A vencer')).toBeInTheDocument()
+    expect(within(row).getByText('Estimada')).toBeInTheDocument()
+    expect(within(row).getByText(/1\.234,50|1,234\.50/)).toBeInTheDocument()
+  })
+
+  it('segue na lista como paga depois de quitada', async () => {
+    api.creditCardBills.list.mockResolvedValue([{ ...openBill, status: 'paid', estimated: false, paid_amount: 1234.5 }])
+    renderWithProviders(<TransactionsPage />, { route: '/transactions?from=2026-10-01&to=2026-10-31', path: '/transactions' })
+
+    expect(await within(await screen.findByTestId('bill-row')).findByText('Paga')).toBeInTheDocument()
+  })
+
+  it('não aparece quando um filtro de conteúdo está ativo', async () => {
+    api.creditCardBills.list.mockResolvedValue([openBill])
+    renderWithProviders(<TransactionsPage />, { route: '/transactions?from=2026-10-01&to=2026-10-31&status=pending', path: '/transactions' })
+    await screen.findByText('ALUGUEL')
+
+    expect(screen.queryByTestId('bill-row')).not.toBeInTheDocument()
   })
 })

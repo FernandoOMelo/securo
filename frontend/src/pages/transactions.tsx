@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
-import { billPaymentOf } from '@/lib/card-bills'
+import { billPaymentOf, todayIso } from '@/lib/card-bills'
+import { billRowsFor, interleave, type ListEntry } from '@/lib/bill-rows'
+import { BillMobileRow, BillTableRow } from '@/components/bill-list-row'
 import { BillStatusBadge } from '@/components/bill-status-badge'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
@@ -401,9 +403,10 @@ export default function TransactionsPage() {
   // Merge the global active-collection filter with the page's own account
   // filter (issue #105): an explicit on-page account selection wins; otherwise
   // scope to the active collection's accounts. null collection = all accounts.
-  const effectiveAccountIds = filterAccountIds.length > 0
-    ? filterAccountIds
-    : (activeAccountIds ?? [])
+  const effectiveAccountIds = useMemo(
+    () => (filterAccountIds.length > 0 ? filterAccountIds : (activeAccountIds ?? [])),
+    [filterAccountIds, activeAccountIds],
+  )
   // Wallet-only collection active (zero accounts) and no explicit on-page
   // account filter → there are no matching transactions; show empty rather
   // than falling back to all accounts.
@@ -826,29 +829,6 @@ export default function TransactionsPage() {
   const filteredItems = useMemo(() => data?.items ?? [], [data?.items])
   const selectableItems = filteredItems.filter(tx => !tx.is_shared)
 
-  // Group transactions by date for the mobile card view
-  const groupedByDate = useMemo(() => {
-    const groups: { date: string; label: string; items: Transaction[] }[] = []
-    let current: { date: string; label: string; items: Transaction[] } | null = null
-    for (const tx of filteredItems) {
-      if (!current || current.date !== tx.date) {
-        current = {
-          date: tx.date,
-          label: new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale, {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          }),
-          items: [],
-        }
-        groups.push(current)
-      }
-      current.items.push(tx)
-    }
-    return groups
-  }, [filteredItems, dateLocale])
-
   // Pre-resolve accounts into a Map for O(1) lookup in the mobile card view
   const accountById = useMemo(() => {
     const map = new Map<string, typeof accountsList extends (infer T)[] | undefined ? T : never>()
@@ -862,11 +842,54 @@ export default function TransactionsPage() {
     (tx) => !!tx.transfer_pair_id
       && (accountById.get(tx.account_id ?? '')?.type === 'credit_card' || tx.transfer_counterpart?.account_type === 'credit_card'),
   )
+  // As faturas dos cartões entram na lista na data de vencimento: a em aberto
+  // mostra o valor até agora e, depois de fechada, segue ali como paga. Só
+  // quando nada filtra o conteúdo e a ordem é por data.
+  const sortsByDate = isMobile || grid.sortBy === null || grid.sortBy === 'date'
+  const contentFiltered = filterCategoryIds.length > 0 || filterUncategorized || !!filterPayee || !!filterGroupId
+    || !!filterType || !!filterStatus || !!filterMinAmount || !!filterMaxAmount || !!searchQuery || tagFilters.length > 0
+  const showBills = !noAccounts && !contentFiltered && sortsByDate
+  const descending = isMobile || grid.sortDir !== 'asc'
   const { data: cardBills } = useQuery({
     queryKey: ['credit-card-bills', 'transactions'],
     queryFn: () => creditCardBills.list(undefined, 24),
-    enabled: pageHasBillPayment,
+    enabled: showBills || pageHasBillPayment,
   })
+  const billRows = useMemo(
+    () => (showBills
+      ? billRowsFor({
+          bills: cardBills, items: filteredItems, page, limit, total: data?.total ?? 0,
+          from: filterFrom || undefined, to: filterTo || undefined,
+          accountIds: effectiveAccountIds, descending, today: todayIso(),
+        })
+      : []),
+    [showBills, cardBills, filteredItems, page, limit, data?.total, filterFrom, filterTo, effectiveAccountIds, descending],
+  )
+  const listEntries = useMemo(() => interleave(filteredItems, billRows, descending), [filteredItems, billRows, descending])
+
+  // Group transactions by date for the mobile card view
+  const groupedByDate = useMemo(() => {
+    const groups: { date: string; label: string; entries: ListEntry[] }[] = []
+    let current: { date: string; label: string; entries: ListEntry[] } | null = null
+    for (const entry of listEntries) {
+      const entryDate = entry.kind === 'tx' ? entry.tx.date : entry.bill.due_date
+      if (!current || current.date !== entryDate) {
+        current = {
+          date: entryDate,
+          label: new Date(entryDate + 'T00:00:00').toLocaleDateString(dateLocale, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+          entries: [],
+        }
+        groups.push(current)
+      }
+      current.entries.push(entry)
+    }
+    return groups
+  }, [listEntries, dateLocale])
 
   const toggleSelectAll = () => {
     if (!selectableItems.length) return
@@ -1691,7 +1714,14 @@ export default function TransactionsPage() {
                     {group.label}
                   </span>
                 </div>
-                {group.items.map((tx) => (
+                {group.entries.map((entry) => entry.kind === 'bill' ? (
+                  <BillMobileRow
+                    key={`bill:${entry.bill.id}`}
+                    bill={entry.bill}
+                    locale={locale}
+                    onOpen={() => navigate('/faturas')}
+                  />
+                ) : ((tx) => (
                   <MobileTransactionRow
                     key={tx.id}
                     tx={tx}
@@ -1714,10 +1744,10 @@ export default function TransactionsPage() {
                       setDialogOpen(true)
                     }}
                   />
-                ))}
+                ))(entry.tx))}
               </div>
             ))}
-            {filteredItems.length === 0 && (
+            {listEntries.length === 0 && (
               <div className="text-center py-16 text-muted-foreground">
                 {t('transactions.noResults')}
               </div>
@@ -1744,7 +1774,17 @@ export default function TransactionsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredItems.map((tx) => (
+              {listEntries.map((entry) => entry.kind === 'bill' ? (
+                <BillTableRow
+                  key={`bill:${entry.bill.id}`}
+                  bill={entry.bill}
+                  columns={grid.visibleColumns}
+                  widthOf={grid.widthOf}
+                  dateLocale={dateLocale}
+                  locale={locale}
+                  onOpen={() => navigate('/faturas')}
+                />
+              ) : ((tx) => (
                 <ContextMenu key={`${tx.id}:${menuEpoch}`}>
                   <ContextMenuTrigger asChild disabled={!canWrite || tx.is_shared}>
                     <TableRow
@@ -1871,8 +1911,8 @@ export default function TransactionsPage() {
                     </ContextMenuContent>
                   </ContextMenuPortal>
                 </ContextMenu>
-              ))}
-              {filteredItems.length === 0 && (
+              ))(entry.tx))}
+              {listEntries.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={grid.visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">
                     {t('transactions.noResults')}
