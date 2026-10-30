@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
+import { billPaymentOf } from '@/lib/card-bills'
+import { BillStatusBadge } from '@/components/bill-status-badge'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
 import { loadRange, saveRange } from '@/lib/remembered-range'
@@ -8,7 +10,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
+import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi, creditCardBills } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -47,7 +49,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CircleCheck, Clock, EyeOff, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CircleCheck, Clock, EyeOff, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt, CreditCard } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -852,6 +854,18 @@ export default function TransactionsPage() {
     return map
   }, [accountsList])
 
+  // Pagamentos de fatura são transferências entre a conta e o cartão; só se
+  // buscam as faturas quando a página tem algum, para mostrar se foi paga.
+  const pageHasBillPayment = filteredItems.some(
+    (tx) => !!tx.transfer_pair_id
+      && (accountById.get(tx.account_id ?? '')?.type === 'credit_card' || tx.transfer_counterpart?.account_type === 'credit_card'),
+  )
+  const { data: cardBills } = useQuery({
+    queryKey: ['credit-card-bills', 'transactions'],
+    queryFn: () => creditCardBills.list(undefined, 24),
+    enabled: pageHasBillPayment,
+  })
+
   const toggleSelectAll = () => {
     if (!selectableItems.length) return
     const allSelected = selectableItems.every(tx => selectedIds.has(tx.id))
@@ -1230,7 +1244,27 @@ export default function TransactionsPage() {
                 not the word that says what the badge is. Past the point
                 where even that no longer fits, the badge clips at the
                 cell edge rather than carrying on into the next column. */}
-            {isTransferTransaction(tx) && (
+            {(() => {
+              const acc = accountById.get(tx.account_id ?? '')
+              const payment = billPaymentOf(tx, acc?.type, acc ? getAccountName(acc) : undefined, cardBills)
+              if (!payment) return null
+              return (
+                <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full">
+                  <CreditCard className="h-3 w-3 shrink-0" />
+                  <span className="shrink-0">{t('cardBills.payment')}</span>
+                  <Link
+                    to="/faturas"
+                    onClick={(e) => e.stopPropagation()}
+                    title={t('cardBills.paymentTooltip')}
+                    className="normal-case tracking-normal font-medium max-w-[180px] truncate hover:underline"
+                  >
+                    {payment.card.name}
+                  </Link>
+                  {payment.bill && <BillStatusBadge status={payment.bill.status} className="px-1.5 py-0 text-[10px] normal-case tracking-normal" />}
+                </span>
+              )
+            })()}
+            {isTransferTransaction(tx) && !billPaymentOf(tx, accountById.get(tx.account_id ?? '')?.type, undefined, undefined) && (
               <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3 shrink-0" />
                 <span className="shrink-0">{t('transactions.transfer')}</span>
@@ -1654,7 +1688,7 @@ export default function TransactionsPage() {
                   <MobileTransactionRow
                     key={tx.id}
                     tx={tx}
-                    account={tx.account_id ? accountById.get(tx.account_id) : undefined}
+                    account={tx.account_id ? accountById.get(tx.account_id ?? '') : undefined}
                     groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
                     selected={selectedIds.has(tx.id)}
                     selectable={canWrite && !tx.is_shared}

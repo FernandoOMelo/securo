@@ -358,7 +358,12 @@ export interface Transaction {
    * The paginated list fills it so the badge can name the account the
    * transfer is linked to (issue #810); other endpoints leave it null.
    */
-  transfer_counterpart?: { account_id: string; account_name: string } | null
+  transfer_counterpart?: {
+    account_id: string
+    account_name: string
+    transaction_id?: string | null
+    account_type?: AccountType | null
+  } | null
   amount_primary: number | null
   fx_rate_used: number | null
   fx_fallback: boolean

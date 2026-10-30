@@ -124,6 +124,12 @@ async def test_transfer_rows_name_the_counterpart_account(
     assert inn["transfer_counterpart"]["account_name"] == "Conta Corrente"
     assert inn["transfer_counterpart"]["account_id"] != inn["account_id"]
 
+    # The other leg's own id and its account type, so the list can tell a card
+    # bill payment from a plain transfer.
+    assert out["transfer_counterpart"]["transaction_id"] == str(leg_in.id)
+    assert inn["transfer_counterpart"]["transaction_id"] == str(leg_out.id)
+    assert out["transfer_counterpart"]["account_type"] in {"checking", "savings"}
+
     assert by_id[str(regular.id)]["transfer_counterpart"] is None
 
 

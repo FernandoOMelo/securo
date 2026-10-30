@@ -167,6 +167,10 @@ class TransactionTransferCounterpart(BaseModel):
 
     account_id: uuid.UUID
     account_name: str
+    #: The other leg's own id and its account's type, so the list can tell a
+    #: bill payment (one leg on a card) from a plain transfer and find the bill.
+    transaction_id: Optional[uuid.UUID] = None
+    account_type: Optional[str] = None
 
 
 class TransactionRead(TransactionBase):

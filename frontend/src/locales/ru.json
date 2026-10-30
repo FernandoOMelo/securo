@@ -3171,6 +3171,9 @@
     "payments": "Pagamentos identificados",
     "charges": "Lançamentos da fatura",
     "noCharges": "Nenhum lançamento ligado a esta fatura.",
+    "payment": "Fatura",
+    "paymentTooltip": "Pagamento de fatura do cartão. Aparece nas duas contas: a que pagou e o cartão.",
+    "paymentUnknown": "Fatura não identificada",
     "status": {
       "paid": "Paga",
       "partial": "Paga em parte",

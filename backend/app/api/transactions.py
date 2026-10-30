@@ -81,6 +81,7 @@ async def _attach_transfer_counterparts(
             # The name the rest of the UI shows: the user's override, or
             # the provider's name when there is none.
             func.coalesce(Account.display_name, Account.name),
+            Account.type,
         )
         .join(Account, Account.id == Transaction.account_id)
         .where(
@@ -88,17 +89,20 @@ async def _attach_transfer_counterparts(
             Transaction.transfer_pair_id.in_(pair_ids),
         )
     )
-    legs: dict[uuid.UUID, list[tuple[uuid.UUID, uuid.UUID, str]]] = {}
-    for tx_id, pair_id, account_id, account_name in result:
-        legs.setdefault(pair_id, []).append((tx_id, account_id, account_name))
+    legs: dict[uuid.UUID, list[tuple[uuid.UUID, uuid.UUID, str, str]]] = {}
+    for tx_id, pair_id, account_id, account_name, account_type in result:
+        legs.setdefault(pair_id, []).append((tx_id, account_id, account_name, account_type))
 
     for item in items:
         if item.transfer_pair_id is None:
             continue
-        for tx_id, account_id, account_name in legs.get(item.transfer_pair_id, []):
+        for tx_id, account_id, account_name, account_type in legs.get(item.transfer_pair_id, []):
             if tx_id != item.id:
                 item.transfer_counterpart = TransactionTransferCounterpart(
-                    account_id=account_id, account_name=account_name
+                    account_id=account_id,
+                    account_name=account_name,
+                    transaction_id=tx_id,
+                    account_type=account_type,
                 )
                 break
 

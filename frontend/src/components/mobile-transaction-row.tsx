@@ -2,7 +2,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, CreditCard, EyeClosed, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -175,9 +175,15 @@ export function MobileTransactionRow({
               </span>
               {tx.transfer_counterpart && (
                 <>
-                  <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
+                  {account.type === 'credit_card' || tx.transfer_counterpart.account_type === 'credit_card' ? (
+                    <CreditCard className="h-3 w-3 text-violet-600 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" aria-hidden="true" />
+                  )}
                   <span className="text-xs text-muted-foreground truncate">
-                    {tx.transfer_counterpart.account_name}
+                    {account.type === 'credit_card' || tx.transfer_counterpart.account_type === 'credit_card'
+                      ? `${t('cardBills.payment')} · ${tx.transfer_counterpart.account_name}`
+                      : tx.transfer_counterpart.account_name}
                   </span>
                 </>
               )}

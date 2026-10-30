@@ -1,4 +1,4 @@
-import type { CreditCardBillSummary } from '@/types'
+import type { CreditCardBillSummary, Transaction } from '@/types'
 
 export const todayIso = () => {
   const now = new Date()
@@ -21,4 +21,38 @@ export function billsDueIn(bills: CreditCardBillSummary[], month: string): Credi
 
 export function remainingToPay(bill: CreditCardBillSummary): number {
   return Math.max(bill.bank_total - bill.paid_amount, 0)
+}
+
+export interface BillPaymentInfo {
+  /** O cartão que recebeu o pagamento. */
+  card: { id: string; name: string }
+  /** A fatura quitada, quando as faturas já carregaram e a identificam. */
+  bill: CreditCardBillSummary | null
+}
+
+/**
+ * Um pagamento de fatura aparece em duas contas: o débito na conta que pagou e o
+ * crédito no cartão, ligados como transferência. Devolve o cartão e a fatura
+ * quando `tx` é uma dessas duas pontas, e null para qualquer outro lançamento.
+ */
+export function billPaymentOf(
+  tx: Pick<Transaction, 'id' | 'account_id' | 'transfer_pair_id' | 'transfer_counterpart'>,
+  accountType: string | null | undefined,
+  accountName: string | undefined,
+  bills: CreditCardBillSummary[] | undefined,
+): BillPaymentInfo | null {
+  if (!tx.transfer_pair_id) return null
+  const other = tx.transfer_counterpart
+  let card: BillPaymentInfo['card'] | null = null
+  let cardLegId: string | null = null
+  if (accountType === 'credit_card') {
+    card = { id: tx.account_id ?? '', name: accountName ?? '' }
+    cardLegId = tx.id
+  } else if (other?.account_type === 'credit_card') {
+    card = { id: other.account_id, name: other.account_name }
+    cardLegId = other.transaction_id ?? null
+  }
+  if (!card) return null
+  const bill = cardLegId ? (bills ?? []).find((b) => b.payments.some((p) => p.id === cardLegId)) ?? null : null
+  return { card, bill }
 }
