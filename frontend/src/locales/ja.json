@@ -1557,6 +1557,8 @@
     "generatePending": "保留中を生成",
     "autoGenerate": "取引を自動生成",
     "autoGenerateHelp": "この支払いの期日が来るたびに取引を作成します。オフにすると、実際の請求(銀行同期など)を待ち、それまでは予定として表示するだけになります。",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "最新の為替レートによる推定({{rate}})。最終金額は変わる場合があります。",
     "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。"
   },

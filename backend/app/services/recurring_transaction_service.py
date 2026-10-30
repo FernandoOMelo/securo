@@ -85,6 +85,7 @@ async def create_recurring_transaction(
         start_date=data.start_date,
         end_date=data.end_date,
         auto_generate=data.auto_generate,
+        amount_tolerance_percent=data.amount_tolerance_percent,
         next_occurrence=next_occ,
     )
     session.add(recurring)
@@ -107,7 +108,7 @@ async def update_recurring_transaction(
 
     update_data = data.model_dump(exclude_unset=True)
 
-    for required in ("weekend_adjustment", "start_date", "frequency"):
+    for required in ("weekend_adjustment", "start_date", "frequency", "amount_tolerance_percent"):
         if required in update_data and update_data[required] is None:
             raise ValueError(f"{required} is required")
 

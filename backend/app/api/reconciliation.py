@@ -587,6 +587,25 @@ async def _settle(
 
     transaction = row.transaction
     transaction.recurring_transaction_id = bill.id
+    # The bill may have written its own placeholder for this occurrence; the
+    # real charge now stands for it, so the placeholder would only double it.
+    placeholders = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill.id,
+                Transaction.source == "recurring",
+                Transaction.external_id.is_(None),
+                Transaction.id != transaction.id,
+            )
+        )
+    ).scalars().all()
+    nearest = min(
+        placeholders,
+        key=lambda tx: abs((tx.date - transaction.date).days),
+        default=None,
+    )
+    if nearest is not None and abs((nearest.date - transaction.date).days) <= 5:
+        await session.delete(nearest)
     recurring_match_service.advance_past(bill, transaction.date)
 
 

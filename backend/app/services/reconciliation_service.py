@@ -58,6 +58,7 @@ from app.services import (
     reconciliation_policy,
     reconciliation_rule_service,
     reconciliation_suggestion_service,
+    recurring_match_service,
 )
 from app.services.module_service import ModuleId, resolve_modules
 from app.services.reconciliation_engine import (
@@ -422,7 +423,10 @@ async def _suggest_recurring(
                     )
                 ],
                 reconciliation_rule_service.narrow_for_frequency(
-                    composed, bill.frequency
+                    recurring_match_service.with_tolerance(
+                        composed, bill.amount_tolerance_percent
+                    ),
+                    bill.frequency,
                 ),
                 base_currency=base_currency,
             )

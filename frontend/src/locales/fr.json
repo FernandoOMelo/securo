@@ -1561,6 +1561,8 @@
     "generatePending": "Générer les transactions en attente",
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
     "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
   },

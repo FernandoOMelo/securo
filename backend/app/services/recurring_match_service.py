@@ -42,6 +42,7 @@ a promise with nothing outstanding is not a candidate. Nothing reaches it:
 banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
+import copy
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -76,6 +77,47 @@ def _date_reach(policy: dict[str, Any]) -> tuple[int, int]:
         before = max(before, int(window.get("before_days", 0)))
         after = max(after, int(window.get("after_days", 0)))
     return before, after
+
+
+#: A charge past a bill's margin, but within this many margins of it, is put to
+#: the person instead of being written next to the bill as a stranger.
+SUGGEST_BAND = Decimal("3")
+_MAX_BAND_PERCENT = Decimal("50")
+
+
+def with_tolerance(policy: dict[str, Any], percent: Any) -> dict[str, Any]:
+    """The policy, letting a charge differ from the bill by `percent`.
+
+    Water and power never come out to the same cent, so a bill carries its own
+    margin. Inside it the charge links like an exact one; past it, up to
+    `SUGGEST_BAND` margins out, the charge is only offered to the person. A
+    margin of zero leaves the shipped policy untouched (a copy is never needed
+    then, as the policy is not edited).
+    """
+    margin = Decimal(str(percent or 0))
+    if margin <= 0:
+        return policy
+    adjusted = copy.deepcopy(policy)
+    offered = []
+    for strategy in adjusted.get("strategies", []):
+        amount = strategy.get("when", {}).get("amount")
+        if strategy.get("outcome") != "link" or not isinstance(amount, dict):
+            continue
+        if amount.get("match") != "exact":
+            continue
+        wider = copy.deepcopy(strategy)
+        wider["id"] = f"{strategy['id']}_wider"
+        wider["outcome"] = "suggest"
+        wider["when"]["amount"] = {
+            "match": "tolerance",
+            "percent": str(min(margin * SUGGEST_BAND, _MAX_BAND_PERCENT)),
+        }
+        wider["when"].pop("unique_candidate", None)
+        amount["match"] = "tolerance"
+        amount["percent"] = str(margin)
+        offered.append(wider)
+    adjusted["strategies"].extend(offered)
+    return adjusted
 
 
 def _as_movement(transaction: Transaction) -> Movement:
@@ -147,8 +189,11 @@ async def find_real_tx_for_occurrence(
     Used by generate_pending: instead of writing a duplicate placeholder for an
     occurrence a real charge already covers, link that charge to the bill.
     """
-    policy = await reconciliation_rule_service.resolve_recurring(
-        session, recurring.workspace_id, recurring.frequency
+    policy = with_tolerance(
+        await reconciliation_rule_service.resolve_recurring(
+            session, recurring.workspace_id, recurring.frequency
+        ),
+        recurring.amount_tolerance_percent,
     )
     # The charge is the movement and the occurrence the expectation, so the
     # charge may be up to `before` days earlier than the occurrence, or `after`
@@ -226,7 +271,11 @@ async def find_placeholder_for_incoming(
     p_before, p_after = _date_reach(policy)
     r_before, r_after = _date_reach(composed)
     result = await session.execute(
-        select(Transaction, RecurringTransaction.frequency)
+        select(
+            Transaction,
+            RecurringTransaction.frequency,
+            RecurringTransaction.amount_tolerance_percent,
+        )
         .join(
             RecurringTransaction,
             RecurringTransaction.id == Transaction.recurring_transaction_id,
@@ -272,7 +321,7 @@ async def find_placeholder_for_incoming(
         account_id=account_id,
     )
     linked = []
-    for placeholder, frequency in rows:
+    for placeholder, frequency, tolerance in rows:
         if placeholder.is_ignored:
             continue
         decision = evaluate(
@@ -289,7 +338,9 @@ async def find_placeholder_for_incoming(
                     account_id=placeholder.account_id,
                 )
             ],
-            reconciliation_rule_service.narrow_for_frequency(composed, frequency),
+            reconciliation_rule_service.narrow_for_frequency(
+                with_tolerance(composed, tolerance), frequency
+            ),
         )
         if decision.port == "linked":
             linked.append((placeholder, decision))
@@ -356,7 +407,8 @@ async def find_bill_for_incoming(
             charge,
             [_as_occurrence(recurring, occurrence)],
             reconciliation_rule_service.narrow_for_frequency(
-                composed, recurring.frequency
+                with_tolerance(composed, recurring.amount_tolerance_percent),
+                recurring.frequency,
             ),
         )
         if decision.port == "linked":

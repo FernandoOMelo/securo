@@ -1637,6 +1637,8 @@
     "generatePending": "Vygenerovať čakajúce",
     "autoGenerate": "Generovať transakcie automaticky",
     "autoGenerateHelp": "Vytvorí transakciu vždy, keď je táto platba splatná. Vypni, ak chceš počkať na skutočnú platbu (napr. zo synchronizácie banky) a dovtedy ju zobrazovať len ako nadchádzajúcu.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Odhad podľa posledného výmenného kurzu ({{rate}}). Konečná suma sa môže zmeniť.",
     "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť."
   },

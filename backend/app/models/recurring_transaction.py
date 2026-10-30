@@ -52,6 +52,12 @@ class RecurringTransaction(Base):
     # matched to it (e.g. from bank sync). Either way, incoming real
     # transactions are linked back to the bill to avoid duplicates.
     auto_generate: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # How far the real charge may drift from `amount` (in %) and still count
+    # as this bill: water and power never come out to the same cent. 0 keeps
+    # the exact match.
+    amount_tolerance_percent: Mapped[Decimal] = mapped_column(
+        Numeric(precision=5, scale=2), default=Decimal("0"), server_default="0"
+    )
     next_occurrence: Mapped[date] = mapped_column(Date)
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)

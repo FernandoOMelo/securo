@@ -342,6 +342,9 @@ function RecurringForm({
   const [accountId, setAccountId] = useState(recurring?.account_id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
+  const [tolerance, setTolerance] = useState(
+    String(Number(recurring?.amount_tolerance_percent ?? 0)),
+  )
 
   const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
@@ -363,6 +366,7 @@ function RecurringForm({
           account_id: accountId || null,
           is_active: isActive,
           auto_generate: autoGenerate,
+          amount_tolerance_percent: Math.min(Math.max(parseFloat(tolerance) || 0, 0), 50),
         } as Partial<RecurringTransaction>)
       }}
       className="space-y-4"
@@ -391,6 +395,23 @@ function RecurringForm({
             <option value="credit">{t('recurring.income')}</option>
           </select>
         </div>
+      </div>
+      <div className="space-y-2">
+        <Label>{t('recurring.amountTolerance')}</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min="0"
+            max="50"
+            step="0.5"
+            value={tolerance}
+            onChange={(e) => setTolerance(e.target.value)}
+            className="w-24"
+            aria-label={t('recurring.amountTolerance')}
+          />
+          <span className="text-sm text-muted-foreground">%</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('recurring.amountToleranceHelp')}</p>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

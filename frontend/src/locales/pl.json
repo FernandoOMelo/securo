@@ -1619,6 +1619,8 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
     "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
   },

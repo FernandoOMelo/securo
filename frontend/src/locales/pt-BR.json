@@ -1561,6 +1561,8 @@
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
     "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita."
   },

@@ -1561,6 +1561,8 @@
     "generatePending": "Generar pendientes",
     "autoGenerate": "Generar transacciones automáticamente",
     "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar.",
     "confirmDeleteDescription": "La definición recurrente \"{{description}}\" se eliminará permanentemente. Las transacciones existentes permanecerán, pero perderán su vínculo recurrente. Esta acción no se puede deshacer."
   },

@@ -1561,6 +1561,8 @@
     "generatePending": "Genera in sospeso",
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
     "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
   },

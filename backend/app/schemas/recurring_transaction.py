@@ -24,6 +24,7 @@ class RecurringTransactionCreate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     skip_first: bool = False  # Set true when first occurrence already created as a transaction
     auto_generate: bool = True  # Materialize occurrences; when false, wait for the real charge
+    amount_tolerance_percent: Decimal = Field(default=Decimal("0"), ge=0, le=50)
 
 
 class RecurringTransactionUpdate(BaseModel):
@@ -40,6 +41,7 @@ class RecurringTransactionUpdate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     auto_generate: Optional[bool] = None
+    amount_tolerance_percent: Optional[Decimal] = Field(default=None, ge=0, le=50)
 
 
 class RecurringTransactionRead(BaseModel):
@@ -58,6 +60,7 @@ class RecurringTransactionRead(BaseModel):
     end_date: Optional[_Date] = None
     is_active: bool
     auto_generate: bool = True
+    amount_tolerance_percent: Decimal = Decimal("0")
     next_occurrence: _Date
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None

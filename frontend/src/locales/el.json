@@ -1557,6 +1557,8 @@
     "generatePending": "Δημιουργία εκκρεμών",
     "autoGenerate": "Αυτόματη δημιουργία συναλλαγών",
     "autoGenerateHelp": "Δημιουργεί μια συναλλαγή κάθε φορά που λήγει αυτός ο λογαριασμός. Απενεργοποιήστε το για να περιμένετε την πραγματική χρέωση (π.χ. από τραπεζικό συγχρονισμό) και να εμφανίζεται μόνο ως επερχόμενη μέχρι τότε.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Εκτίμηση βάσει της τελευταίας συναλλαγματικής ισοτιμίας ({{rate}}). Το τελικό ποσό ενδέχεται να αλλάξει.",
     "confirmDeleteDescription": "Ο ορισμός της επαναλαμβανόμενης συναλλαγής \"{{description}}\" θα διαγραφεί οριστικά. Οι υπάρχουσες συναλλαγές θα παραμείνουν αλλά θα χάσουν τη σύνδεσή τους. Αυτή η ενέργεια δεν μπορεί να αναιρεθεί."
   },

@@ -1574,6 +1574,8 @@
     "generatePending": "Створити очікувані",
     "autoGenerate": "Створювати транзакції автоматично",
     "autoGenerateHelp": "Створює транзакцію щоразу, коли настає термін оплати. Вимкніть, щоб дочекатися реального списання (наприклад, із банківської синхронізації) і до того часу показувати її лише як майбутню.",
+    "amountTolerance": "Margem de diferença no valor",
+    "amountToleranceHelp": "Para contas que variam um pouco todo mês (luz, água). Dentro da margem o lançamento do banco é reconhecido como esta conta e o valor real substitui o previsto; um pouco acima, ele vai para a revisão. 0 exige valor exato.",
     "fxEstimate": "Оцінка на основі останнього курсу ({{rate}}). Підсумкова сума може змінитися.",
     "confirmDeleteDescription": "Визначення регулярної транзакції «{{description}}» буде видалено назавжди. Наявні транзакції залишаться, але втратять зв’язок із регулярною транзакцією. Цю дію не можна скасувати."
   },
