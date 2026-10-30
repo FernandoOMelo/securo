@@ -140,8 +140,12 @@ async def get_transactions(
     exclude_ignored: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
+    compact: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
+
+    `compact` is the everyday view: no card charges (they belong to their bill)
+    and one line per transfer. It does nothing once an account or bill is chosen.
 
     `workspace_id` scopes the tenant (which transactions are visible). `user_id`
     is the *viewer* — used for Splitwise projection (linked-member visibility,
@@ -482,6 +486,25 @@ async def get_transactions(
             ])
         base_query = base_query.where(or_(*clauses))
 
+    # The summary below always covers every matching row; the compact view
+    # only changes which rows the list shows, not what the period earned or spent.
+    summary_query = base_query
+    scoped = bool(
+        account_id or account_ids or account_types or bill_id or unbilled_only
+        or group_id or transaction_ids
+    )
+    if compact and not scoped:
+        from sqlalchemy import and_ as _c_and
+
+        # Card charges live on their bill, and a transfer is one line: keep
+        # the sending leg and drop the receiving one. Picking an account
+        # (or a bill) brings both back, since then each row is that
+        # account's own movement.
+        base_query = base_query.where(
+            or_(Transaction.account_id.is_(None), Account.type != "credit_card"),
+            ~_c_and(Transaction.transfer_pair_id.is_not(None), Transaction.type == "credit"),
+        )
+
     # Get total count
     count_query = select(func.count()).select_from(base_query.subquery())
     total = await session.scalar(count_query)
@@ -499,7 +522,7 @@ async def get_transactions(
         # transfers, `treat_as_transfer` categories (transfers, investments,
         # custom) and ignored items are kept OUT of income/expense.
         pnl_filter = counts_as_pnl()
-        pnl_subq = base_query.where(pnl_filter).subquery()
+        pnl_subq = summary_query.where(pnl_filter).subquery()
         amount_norm = func.coalesce(
             pnl_subq.c.amount_primary, pnl_subq.c.amount
         )
@@ -521,7 +544,7 @@ async def get_transactions(
         # the same rows — the complement of `counts_as_pnl()`. Surfaces
         # transfer-like movement (e.g. how much was moved/invested) without
         # distorting income/expense/net.
-        excl_subq = base_query.where(not_(pnl_filter)).subquery()
+        excl_subq = summary_query.where(not_(pnl_filter)).subquery()
         excl_amount_norm = func.coalesce(
             excl_subq.c.amount_primary, excl_subq.c.amount
         )

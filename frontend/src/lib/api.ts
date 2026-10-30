@@ -645,6 +645,7 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    compact?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number

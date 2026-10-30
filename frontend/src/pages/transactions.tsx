@@ -431,6 +431,8 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
+        // Cartão vive na fatura e transferência é uma linha só.
+        compact: true,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -1268,6 +1270,7 @@ export default function TransactionsPage() {
               <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3 shrink-0" />
                 <span className="shrink-0">{t('transactions.transfer')}</span>
+                {tx.transfer_counterpart && <span className="shrink-0">{tx.type === 'debit' ? '→' : '←'}</span>}
                 {tx.transfer_counterpart && (
                   <Link
                     to={`/accounts/${tx.transfer_counterpart.account_id}`}
@@ -1462,9 +1465,13 @@ export default function TransactionsPage() {
       case 'type':
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm`}>
-            <span className={tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}>
-              {tx.type === 'credit' ? t('transactions.typeIncome') : t('transactions.typeExpense')}
-            </span>
+            {isTransferTransaction(tx) ? (
+              <span className="text-muted-foreground">{t('transactions.transfer')}</span>
+            ) : (
+              <span className={tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}>
+                {tx.type === 'credit' ? t('transactions.typeIncome') : t('transactions.typeExpense')}
+              </span>
+            )}
           </TableCell>
         )
       case 'status':
