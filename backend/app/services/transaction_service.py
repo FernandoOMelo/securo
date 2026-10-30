@@ -2108,6 +2108,43 @@ async def bulk_add_to_group(
     return {"updated": updated, "skipped": skipped}
 
 
+async def _settle(
+    session: AsyncSession,
+    transaction: Transaction,
+    workspace_id: uuid.UUID,
+    *,
+    new_date: Optional[date] = None,
+) -> None:
+    """Mark a transaction posted, optionally moving it to `new_date`.
+
+    A date change drags the effective date and the FX restamp with it, and a
+    transfer leg carries the same change to its partner, so the row ends up
+    exactly where editing it by hand would have left it. With no `new_date` only
+    the status changes. Nothing is committed here.
+    """
+    rows = [transaction]
+    if transaction.transfer_pair_id:
+        paired = (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.transfer_pair_id == transaction.transfer_pair_id,
+                    Transaction.id != transaction.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if paired:
+            rows.append(paired)
+
+    for row in rows:
+        row.status = "posted"
+        if new_date is not None:
+            row.date = new_date
+            account = await session.get(Account, row.account_id)
+            apply_effective_date(row, account)
+            await stamp_primary_amount(session, row.user_id, row)
+
+
 async def post_transaction_today(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -2117,43 +2154,94 @@ async def post_transaction_today(
 
     The one-click "it cleared today" action for a pending entry: confirms the
     status and moves the purchase date to the workspace's current day, the same
-    as saving the edit dialog with status "posted" and date "today". The
-    effective date and the FX restamp follow the date change, and a transfer
-    pair leg carries the same change to its partner, so the row ends up exactly
-    where the manual edit would have left it. No other field is touched, and the
-    transaction must belong to the given workspace.
+    as saving the edit dialog with status "posted" and date "today". No other
+    field is touched, and the transaction must belong to the given workspace.
     """
     transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return None
 
-    today = app_today()
-    transaction.status = "posted"
-    transaction.date = today
-
-    account = await session.get(Account, transaction.account_id)
-    apply_effective_date(transaction, account)
-    await stamp_primary_amount(session, transaction.user_id, transaction)
-
-    if transaction.transfer_pair_id:
-        paired_result = await session.execute(
-            select(Transaction).where(
-                Transaction.workspace_id == workspace_id,
-                Transaction.transfer_pair_id == transaction.transfer_pair_id,
-                Transaction.id != transaction.id,
-            )
-        )
-        paired = paired_result.scalar_one_or_none()
-        if paired:
-            paired.status = "posted"
-            paired.date = today
-            paired_account = await session.get(Account, paired.account_id)
-            apply_effective_date(paired, paired_account)
-            await stamp_primary_amount(session, paired.user_id, paired)
-
+    await _settle(session, transaction, workspace_id, new_date=app_today())
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def bulk_post_transactions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+    *,
+    keep_date: bool = False,
+) -> dict:
+    """Settle every pending transaction among `transaction_ids`.
+
+    Only pending rows change; settled ones, other workspaces' rows and the
+    principal half of a mortgage payment are skipped rather than failing the
+    batch. `keep_date` leaves each date as it is (the entry was right about
+    when it happened) instead of moving it to today. Returns how many rows were
+    settled and how many of those asked for were left alone.
+    """
+    wanted = set(transaction_ids)
+    rows = (
+        await session.execute(
+            select(Transaction)
+            .where(Transaction.id.in_(wanted), Transaction.workspace_id == workspace_id)
+            .order_by(Transaction.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+
+    candidates = [
+        tx for tx in rows if tx.status == "pending" and tx.source != MORTGAGE_PRINCIPAL_SOURCE
+    ]
+    candidate_ids = {tx.id for tx in candidates}
+    today = None if keep_date else app_today()
+    for tx in candidates:
+        # A transfer's other leg may have been settled along with this one already.
+        if tx.status == "pending":
+            await _settle(session, tx, workspace_id, new_date=today)
+
+    await session.commit()
+    return {"updated": len(candidate_ids), "skipped": len(wanted) - len(candidate_ids)}
+
+
+async def bulk_set_ignored(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+    *,
+    ignored: bool,
+) -> dict:
+    """Ignore or restore many transactions at once.
+
+    Same rule as the single toggle: a mortgage payment with a breakdown, and the
+    principal half of one, keep their state. Rows already in the wanted state
+    count as skipped.
+    """
+    wanted = set(transaction_ids)
+    rows = (
+        await session.execute(
+            select(Transaction)
+            .where(Transaction.id.in_(wanted), Transaction.workspace_id == workspace_id)
+            .order_by(Transaction.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+
+    updated = 0
+    for tx in rows:
+        if tx.is_ignored == ignored:
+            continue
+        if tx.source == MORTGAGE_PRINCIPAL_SOURCE or await _has_mortgage_breakdown(
+            session, workspace_id, tx.id
+        ):
+            continue
+        tx.is_ignored = ignored
+        updated += 1
+
+    await session.commit()
+    return {"updated": updated, "skipped": len(wanted) - updated}
 
 
 async def toggle_ignore_transaction(

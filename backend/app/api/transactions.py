@@ -19,7 +19,7 @@ from app.core.workspace_context import (
 )
 from app.models.account import Account
 from app.models.transaction import Transaction
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import BulkAddToGroupRequest, BulkIgnoreRequest, BulkPostRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -648,6 +648,30 @@ async def delete_transaction(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+
+@router.post("/bulk-post", status_code=status.HTTP_200_OK)
+async def bulk_post_transactions(
+    data: BulkPostRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Settle the pending transactions among the given ones."""
+    return await transaction_service.bulk_post_transactions(
+        session, ctx.workspace.id, data.transaction_ids, keep_date=data.keep_date
+    )
+
+
+@router.post("/bulk-ignore", status_code=status.HTTP_200_OK)
+async def bulk_ignore_transactions(
+    data: BulkIgnoreRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Ignore (or restore) the given transactions."""
+    return await transaction_service.bulk_set_ignored(
+        session, ctx.workspace.id, data.transaction_ids, ignored=data.ignored
+    )
 
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)

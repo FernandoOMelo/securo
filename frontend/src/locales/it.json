@@ -3209,5 +3209,32 @@
       "more": "+{{count}} pendentes",
       "viewAll": "Ver todas"
     }
+  },
+  "operationalFlow": {
+    "post": "Efetivar",
+    "postToday": "Efetivar com a data de hoje",
+    "postKeepDate": "Efetivar mantendo a data",
+    "ignore": "Ignorar",
+    "ignoreSelected": "Ignorar selecionados",
+    "restoreSelected": "Reativar selecionados",
+    "posted": "{{updated}} efetivados",
+    "postedSome": "{{updated}} efetivados · {{skipped}} não mudaram (já estavam efetivados ou não puderam ser alterados)",
+    "ignored": "{{updated}} ignorados",
+    "restored": "{{updated}} reativados"
+  },
+  "savedFilters": {
+    "label": "Filtros salvos",
+    "save": "Salvar filtro",
+    "saved": "Filtro salvo",
+    "saveError": "Não foi possível salvar o filtro.",
+    "remove": "Excluir o filtro {{name}}",
+    "dialogTitle": "Salvar filtro",
+    "dialogHint": "Guarda os filtros que estão aplicados para usar de novo com um clique.",
+    "name": "Nome",
+    "namePlaceholder": "Ex.: Pendentes do cartão",
+    "includePeriod": "Incluir o período",
+    "includePeriodHint": "Sem isso, o filtro vale para qualquer mês e mantém o período que você estiver vendo.",
+    "cancel": "Cancelar",
+    "confirm": "Salvar"
   }
 }

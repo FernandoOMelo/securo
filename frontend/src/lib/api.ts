@@ -758,6 +758,20 @@ export const transactions = {
     })
     return data
   },
+  bulkPost: async (transactionIds: string[], keepDate = false): Promise<{ updated: number; skipped: number }> => {
+    const { data } = await api.post('/transactions/bulk-post', {
+      transaction_ids: transactionIds,
+      keep_date: keepDate,
+    })
+    return data
+  },
+  bulkIgnore: async (transactionIds: string[], ignored = true): Promise<{ updated: number; skipped: number }> => {
+    const { data } = await api.post('/transactions/bulk-ignore', {
+      transaction_ids: transactionIds,
+      ignored,
+    })
+    return data
+  },
   bulkDelete: async (transactionIds: string[]): Promise<{ deleted: number }> => {
     const { data } = await api.post('/transactions/bulk-delete', {
       transaction_ids: transactionIds,

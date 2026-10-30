@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CircleCheck, Clock, EyeOff, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -73,6 +73,8 @@ import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { SyncMatchReview } from '@/components/sync-match-review'
+import { BulkStatusActions } from '@/components/bulk-status-actions'
+import { SavedFiltersBar } from '@/components/saved-filters-bar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
@@ -104,7 +106,7 @@ const HIDE_IGNORED_STORAGE_KEY = 'securo.transactions.hideIgnored'
 export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
   const { collapsed: sidebarCollapsed } = useSidebarState()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
@@ -112,7 +114,10 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite, hasModule } = useWorkspace()
+  const { canWrite, hasModule, current: currentWorkspace } = useWorkspace()
+  // A query string que a página está mostrando agora. O efeito que mantém a URL
+  // em dia usa replaceState, que o roteador não vê, então ela é guardada aqui.
+  const [currentSearch, setCurrentSearch] = useState(() => window.location.search)
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -320,6 +325,7 @@ export default function TransactionsPage() {
       '',
       params.size ? `?${params}` : window.location.pathname,
     );
+    setCurrentSearch(params.toString());
   }, [
     searchQuery,
     viewMode,
@@ -665,6 +671,34 @@ export default function TransactionsPage() {
       setLinkTransferDialogOpen(false)
       setSelectedIds(new Set())
       toast.success(t('transactions.linkTransferSuccess'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const bulkPostMutation = useMutation({
+    mutationFn: ({ ids, keepDate }: { ids: string[]; keepDate: boolean }) => transactions.bulkPost(ids, keepDate),
+    onSuccess: (result) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(
+        result.skipped > 0
+          ? t('operationalFlow.postedSome', { updated: result.updated, skipped: result.skipped })
+          : t('operationalFlow.posted', { updated: result.updated }),
+      )
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const bulkIgnoreMutation = useMutation({
+    mutationFn: ({ ids, ignored }: { ids: string[]; ignored: boolean }) => transactions.bulkIgnore(ids, ignored),
+    onSuccess: (result, { ignored }) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(t(ignored ? 'operationalFlow.ignored' : 'operationalFlow.restored', { updated: result.updated }))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1472,6 +1506,12 @@ export default function TransactionsPage() {
       <SyncMatchReview canWrite={canWrite} />
 
       {/* Filters */}
+      <SavedFiltersBar
+        workspaceId={currentWorkspace?.id}
+        search={currentSearch}
+        onApply={(query) => setSearchParams(new URLSearchParams(query))}
+      />
+
       <TransactionsFilterBar
         searchInput={searchInput}
         onSearchChange={(v) => setSearchInput(v)}
@@ -1758,6 +1798,19 @@ export default function TransactionsPage() {
                         {t('transactions.bulkAddTags')}
                       </ContextMenuItem>
 
+                      <ContextMenuItem onSelect={() => bulkPostMutation.mutate({ ids: Array.from(selectedIds), keepDate: false })}>
+                        <CircleCheck className="mr-2 h-4 w-4" />
+                        {t('operationalFlow.postToday')}
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => bulkPostMutation.mutate({ ids: Array.from(selectedIds), keepDate: true })}>
+                        <CircleCheck className="mr-2 h-4 w-4" />
+                        {t('operationalFlow.postKeepDate')}
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => bulkIgnoreMutation.mutate({ ids: Array.from(selectedIds), ignored: true })}>
+                        <EyeOff className="mr-2 h-4 w-4" />
+                        {t('operationalFlow.ignoreSelected')}
+                      </ContextMenuItem>
+
                       {selectedSingleTx && (
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
                           <SlidersHorizontal className="mr-2 h-4 w-4" />
@@ -1969,6 +2022,8 @@ export default function TransactionsPage() {
               onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
               onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
               onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
+              onBulkPost={(keepDate) => bulkPostMutation.mutate({ ids: Array.from(selectedIds), keepDate })}
+              onBulkIgnore={(ignored) => bulkIgnoreMutation.mutate({ ids: Array.from(selectedIds), ignored })}
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
@@ -2103,6 +2158,15 @@ export default function TransactionsPage() {
               <ArrowLeftRight size={15} className="mr-1.5" />
               <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
             </Button>
+
+            <div className="w-px bg-border/60 self-stretch" />
+
+            {/* Efetivar e ignorar a seleção */}
+            <BulkStatusActions
+              disabled={bulkPostMutation.isPending || bulkIgnoreMutation.isPending}
+              onPost={(keepDate) => bulkPostMutation.mutate({ ids: Array.from(selectedIds), keepDate })}
+              onIgnore={(ignored) => bulkIgnoreMutation.mutate({ ids: Array.from(selectedIds), ignored })}
+            />
 
             <div className="w-px bg-border/60 self-stretch" />
 

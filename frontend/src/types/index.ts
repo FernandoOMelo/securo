@@ -89,6 +89,8 @@ export interface UserPreferences {
   onboarding_completed?: boolean
   /** Layout do painel por workspace: { [workspaceId]: lista de blocos }. */
   dashboard_layouts?: Record<string, unknown>
+  /** Filtros salvos da lista de transações, por workspace. */
+  transaction_filters?: Record<string, unknown>
 }
 
 export interface Category {

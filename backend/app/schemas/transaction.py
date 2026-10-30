@@ -243,6 +243,17 @@ class TransactionBulkDeleteRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
 
 
+class BulkPostRequest(BaseModel):
+    transaction_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    # Keep each transaction's date instead of moving it to today.
+    keep_date: bool = False
+
+
+class BulkIgnoreRequest(BaseModel):
+    transaction_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    ignored: bool = True
+
+
 class BulkAddToGroupRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     group_id: uuid.UUID

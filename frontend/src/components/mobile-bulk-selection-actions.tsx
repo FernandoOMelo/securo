@@ -1,5 +1,5 @@
 import type { Category, CategoryGroup } from '@/types'
-import { ArrowLeftRight, Check, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
+import { ArrowLeftRight, Check, CircleCheck, EyeOff, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,8 @@ export type MobileBulkSelectionActionsProps = {
   onOpenTransfer: () => void
   onCreateRule?: () => void
   onBulkDelete: () => void
+  onBulkPost?: (keepDate: boolean) => void
+  onBulkIgnore?: (ignored: boolean) => void
   onTagInputChange: (value: string) => void
   onAddTags: (tags: string[]) => void
   onRemoveTags: (tags: string[]) => void
@@ -102,6 +104,26 @@ function BulkActionItems(props: MobileBulkSelectionActionsProps) {
       <DropdownMenuItem disabled={props.transferDisabled} title={props.transferTitle} onSelect={props.onOpenTransfer}>
         <ArrowLeftRight size={15} />{t('transactions.linkAsTransfer')}
       </DropdownMenuItem>
+      {props.onBulkPost && (
+        <>
+          <DropdownMenuItem onSelect={() => props.onBulkPost?.(false)}>
+            <CircleCheck size={15} />{t('operationalFlow.postToday')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => props.onBulkPost?.(true)}>
+            <CircleCheck size={15} />{t('operationalFlow.postKeepDate')}
+          </DropdownMenuItem>
+        </>
+      )}
+      {props.onBulkIgnore && (
+        <>
+          <DropdownMenuItem onSelect={() => props.onBulkIgnore?.(true)}>
+            <EyeOff size={15} />{t('operationalFlow.ignoreSelected')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => props.onBulkIgnore?.(false)}>
+            <EyeOff size={15} />{t('operationalFlow.restoreSelected')}
+          </DropdownMenuItem>
+        </>
+      )}
       {props.onCreateRule && <DropdownMenuItem onSelect={props.onCreateRule}><SlidersHorizontal size={15} />{t('transactions.createRule')}</DropdownMenuItem>}
       <DropdownMenuItem onSelect={props.onBulkDelete} className="text-destructive">
         <Trash2 size={15} />{t('transactions.bulkDelete')}
