@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -49,6 +49,22 @@ import type { Transaction, RecurringTransaction, TransactionSplitsInput, Transac
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
+
+type TransactionMode = 'expense' | 'income' | 'card'
+
+const TRANSACTION_MODES: { value: TransactionMode; labelKey: string; activeClass: string }[] = [
+  { value: 'expense', labelKey: 'transactions.modeExpense', activeClass: 'text-red-600 dark:text-red-400' },
+  { value: 'income', labelKey: 'transactions.modeIncome', activeClass: 'text-emerald-600 dark:text-emerald-400' },
+  { value: 'card', labelKey: 'transactions.modeCard', activeClass: 'text-violet-600 dark:text-violet-400' },
+]
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h4 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+    </h4>
+  )
+}
 
 export type TransactionSavePayload = TransactionEditPayload & {
   apply_to?: TransactionApplyScope
@@ -462,6 +478,15 @@ function TransactionForm({
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
+  // The three kinds of entry the form is organised around. Card spending is
+  // not a stored type: it is a debit on a credit-card account, so the mode
+  // is derived from the account on open and only narrows the account list
+  // and the fields shown from then on.
+  const [mode, setMode] = useState<TransactionMode>(() => {
+    const initialAccountId = seed?.account_id ?? defaultAccountId
+    if (accounts.find((a) => a.id === initialAccountId)?.type === 'credit_card') return 'card'
+    return seed?.type === 'credit' ? 'income' : 'expense'
+  })
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
@@ -509,6 +534,35 @@ function TransactionForm({
     return !!(existing && existing.length > 0)
   })
   const isCreating = !transaction
+  const showModeSelector = !isSynced && !transaction?.transfer_pair_id
+  const isCardMode = mode === 'card'
+  // Cards and plain accounts never share a picker: a card entry must land on
+  // a card (it needs a bill), and an expense or income must not.
+  const modeAccounts = useMemo(
+    () => (showModeSelector
+      ? sortedAccounts.filter((a) => (a.type === 'credit_card') === isCardMode)
+      : sortedAccounts),
+    [sortedAccounts, showModeSelector, isCardMode],
+  )
+  const handleModeChange = (next: TransactionMode) => {
+    if (next === mode) return
+    setMode(next)
+    setType(next === 'income' ? 'credit' : 'debit')
+    const accountFits = (id: string) =>
+      accounts.find((a) => a.id === id)?.type === 'credit_card' ? next === 'card' : next !== 'card'
+    if (!accountId || !accountFits(accountId)) {
+      const candidates = sortedAccounts.filter((a) => (a.type === 'credit_card') === (next === 'card'))
+      setAccountId(candidates.length === 1 ? candidates[0].id : '')
+      setEffectiveBillDate('')
+    }
+  }
+  // Bills of the selected card, so the bill can be picked instead of typing
+  // its due date. Manual cards usually have none: they keep the date picker.
+  const { data: cardBills } = useQuery({
+    queryKey: ['accounts', accountId, 'bills'],
+    queryFn: () => accountsApi.bills(accountId),
+    enabled: isCardMode && !!accountId,
+  })
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
@@ -994,6 +1048,34 @@ function TransactionForm({
           </Button>
         </div>
       )}
+      {showModeSelector && (
+        <div
+          role="radiogroup"
+          aria-label={t('transactions.type')}
+          className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+        >
+          {TRANSACTION_MODES.map((m) => {
+            const active = mode === m.value
+            return (
+              <button
+                key={m.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => handleModeChange(m.value)}
+                className={cn(
+                  'rounded-md px-2 py-1.5 text-sm font-medium transition-colors cursor-pointer',
+                  active
+                    ? cn('bg-card shadow-xs', m.activeClass)
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {t(m.labelKey)}
+              </button>
+            )
+          })}
+        </div>
+      )}
       <div className="space-y-2">
         <Label>{t('transactions.description')}</Label>
         {isSynced ? (
@@ -1098,9 +1180,14 @@ function TransactionForm({
           </select>
         </div>
       </div>
+      <SectionTitle>{t('transactions.sectionDates')}</SectionTitle>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.date')}</Label>
+          <Label>
+            {showModeSelector
+              ? t(isCardMode ? 'transactions.purchaseDate' : 'transactions.dueDate')
+              : t('transactions.date')}
+          </Label>
           <DatePickerInput
             value={date}
             onChange={setDate}
@@ -1110,15 +1197,21 @@ function TransactionForm({
         </div>
         <div className="space-y-2">
           <Label>{t('transactions.colStatus')}</Label>
-          <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
-            disabled={isSynced}
+          <label
+            className={cn(
+              'flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm',
+              isSynced ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+            )}
           >
-            <option value="posted">{t('transactions.statusPosted')}</option>
-            <option value="pending">{t('transactions.statusPending')}</option>
-          </select>
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border accent-primary"
+              checked={status === 'posted'}
+              onChange={(e) => setStatus(e.target.checked ? 'posted' : 'pending')}
+              disabled={isSynced}
+            />
+            <span>{t('transactions.settled')}</span>
+          </label>
         </div>
       </div>
       {showConversion && (
@@ -1169,19 +1262,130 @@ function TransactionForm({
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>{t('transactions.type')}</Label>
-          <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-            value={type}
-            onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
-            disabled={isSynced}
-          >
-            <option value="debit">{t('transactions.expense')}</option>
-            <option value="credit">{t('transactions.income')}</option>
-          </select>
+      {/* Create options — recurring and installment toggles share one row
+          when creating non-synced transactions. "Repeat as installments"
+          mirrors the transaction N times for debits and receivables. */}
+      {isCreating && !isSynced && (
+        <div className="space-y-3 border rounded-md p-3">
+          <SectionTitle>{t('transactions.sectionRepeat')}</SectionTitle>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="transaction-repeat"
+                checked={!isRecurring && !isInstallment}
+                onChange={() => {
+                  setIsRecurring(false)
+                  setIsInstallment(false)
+                }}
+                className="accent-primary"
+              />
+              <span className="text-sm font-medium">{t('transactions.repeatNone')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="transaction-repeat"
+                checked={isInstallment}
+                onChange={() => {
+                  setIsInstallment(true)
+                  setIsRecurring(false)
+                }}
+                className="accent-primary"
+              />
+              <span className="text-sm font-medium">{t('transactions.makeInstallment')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="transaction-repeat"
+                checked={isRecurring}
+                onChange={() => {
+                  setIsRecurring(true)
+                  setIsInstallment(false)
+                }}
+                className="accent-primary"
+              />
+              <span className="text-sm font-medium">{t('transactions.makeRecurring')}</span>
+            </label>
+          </div>
+          {isRecurring && (
+            <div className="grid grid-cols-2 gap-4 pt-1">
+              <div className="space-y-2">
+                <Label>{t('recurring.frequency')}</Label>
+                <select
+                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                  value={frequency}
+                  onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
+                >
+                  <option value="monthly">{t('recurring.monthly')}</option>
+                  <option value="quarterly">{t('recurring.quarterly')}</option>
+                  <option value="semiannual">{t('recurring.semiannual')}</option>
+                  <option value="weekly">{t('recurring.weekly')}</option>
+                  <option value="biweekly">{t('recurring.biweekly')}</option>
+                  <option value="yearly">{t('recurring.yearly')}</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('recurring.endDate')}</Label>
+                <DatePickerInput
+                  value={endDate}
+                  onChange={setEndDate}
+                  placeholder={t('recurring.endDate')}
+                  className="w-full justify-start"
+                />
+              </div>
+            </div>
+          )}
+          {isInstallment && (
+            <div className="grid grid-cols-2 gap-4 pt-1">
+              <div className="space-y-2">
+                <Label>{t('transactions.installmentFrequency')}</Label>
+                <select
+                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                  value={installmentFrequency}
+                  onChange={(e) => setInstallmentFrequency(e.target.value as RecurringTransaction['frequency'])}
+                >
+                  <option value="monthly">{t('recurring.monthly')}</option>
+                  <option value="quarterly">{t('recurring.quarterly')}</option>
+                  <option value="semiannual">{t('recurring.semiannual')}</option>
+                  <option value="weekly">{t('recurring.weekly')}</option>
+                  <option value="biweekly">{t('recurring.biweekly')}</option>
+                  <option value="yearly">{t('recurring.yearly')}</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('transactions.installmentCount')}</Label>
+                <input
+                  type="number"
+                  min={2}
+                  max={360}
+                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                  value={installmentCount}
+                  onChange={(e) => setInstallmentCount(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      <SectionTitle>{t('transactions.sectionClassification')}</SectionTitle>
+      <div className={cn('grid gap-4', showModeSelector ? 'grid-cols-1' : 'grid-cols-2')}>
+        {!showModeSelector && (
+          <div className="space-y-2">
+            <Label>{t('transactions.type')}</Label>
+            <select
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+              value={type}
+              onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
+              disabled={isSynced}
+            >
+              <option value="debit">{t('transactions.expense')}</option>
+              <option value="credit">{t('transactions.income')}</option>
+            </select>
+          </div>
+        )}
         <div className="space-y-2">
           <Label>{t('transactions.category')}</Label>
           <CategorySelect
@@ -1211,15 +1415,26 @@ function TransactionForm({
         </div>
         {!isSynced && (
           <div className="space-y-2">
-            <Label>{t('transactions.account')}</Label>
+            <Label>{t(isCardMode && showModeSelector ? 'transactions.creditCard' : 'transactions.account')}</Label>
             <select
               className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+              onChange={(e) => {
+                setAccountId(e.target.value)
+                // A bill belongs to one card: a due date picked for the
+                // previous card means nothing on the new one.
+                setEffectiveBillDate('')
+              }}
               required
             >
-              {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
-              {sortedAccounts.map((acc) => (
+              {!accountId && (
+                <option value="" disabled hidden>
+                  {modeAccounts.length === 0 && isCardMode
+                    ? t('transactions.noCreditCards')
+                    : t('transactions.createCounterpartSelectAccount')}
+                </option>
+              )}
+              {modeAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
               ))}
             </select>
@@ -1238,6 +1453,7 @@ function TransactionForm({
         />
       </div>
 
+      {transaction && <SectionTitle>{t('transactions.sectionOptions')}</SectionTitle>}
       {transaction && (
         <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
           <input
@@ -1264,10 +1480,40 @@ function TransactionForm({
       {(() => {
         const selectedAcc = accounts.find(a => a.id === accountId)
         if (selectedAcc?.type !== 'credit_card') return null
+        // With bills to choose from, pick one; without (manual cards), fall
+        // back to typing the due date. Either way the value is the bill's
+        // due date, which is what the backend override expects.
+        if (cardBills && cardBills.length > 0) {
+          const knownDates = new Set(cardBills.map((b) => b.due_date))
+          const formatDue = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString(dateLocale)
+          return (
+            <div className="space-y-2">
+              <Label>{t('transactions.bill')}</Label>
+              <select
+                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                value={effectiveBillDate}
+                onChange={(e) => setEffectiveBillDate(e.target.value)}
+              >
+                <option value="">{t('transactions.billAuto')}</option>
+                {effectiveBillDate && !knownDates.has(effectiveBillDate) && (
+                  <option value={effectiveBillDate}>
+                    {t('transactions.billOption', { date: formatDue(effectiveBillDate) })}
+                  </option>
+                )}
+                {cardBills.map((bill) => (
+                  <option key={bill.id} value={bill.due_date}>
+                    {t('transactions.billOption', { date: formatDue(bill.due_date) })}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">{t('transactions.billHint')}</p>
+            </div>
+          )
+        }
         return (
           <div className="space-y-2">
             <Label>
-              {t('transactions.effectiveBillDate', 'Effective bill date')}{' '}
+              {t('transactions.bill')}{' '}
               <span className="text-muted-foreground font-normal text-xs">
                 ({t('transactions.effectiveBillDateHint', 'manual, overrides the automatic cycle')})
               </span>
@@ -1330,98 +1576,6 @@ function TransactionForm({
           onFileChange={(e) => { if (e.target.files?.length) { addPendingFiles(e.target.files); e.target.value = '' } }}
           onRemove={removePendingFile}
         />
-      )}
-
-      {/* Create options — recurring and installment toggles share one row
-          when creating non-synced transactions. "Repeat as installments"
-          mirrors the transaction N times for debits and receivables. */}
-      {isCreating && !isSynced && (
-        <div className="space-y-3 border rounded-md p-3">
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isRecurring}
-                onChange={(e) => {
-                  setIsRecurring(e.target.checked)
-                  if (e.target.checked) setIsInstallment(false)
-                }}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm font-medium">{t('transactions.makeRecurring')}</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isInstallment}
-                onChange={(e) => {
-                  setIsInstallment(e.target.checked)
-                  if (e.target.checked) setIsRecurring(false)
-                }}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm font-medium">{t('transactions.makeInstallment')}</span>
-            </label>
-          </div>
-          {isRecurring && (
-            <div className="grid grid-cols-2 gap-4 pt-1">
-              <div className="space-y-2">
-                <Label>{t('recurring.frequency')}</Label>
-                <select
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                  value={frequency}
-                  onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
-                >
-                  <option value="monthly">{t('recurring.monthly')}</option>
-                  <option value="quarterly">{t('recurring.quarterly')}</option>
-                  <option value="semiannual">{t('recurring.semiannual')}</option>
-                  <option value="weekly">{t('recurring.weekly')}</option>
-                  <option value="biweekly">{t('recurring.biweekly')}</option>
-                  <option value="yearly">{t('recurring.yearly')}</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>{t('recurring.endDate')}</Label>
-                <DatePickerInput
-                  value={endDate}
-                  onChange={setEndDate}
-                  placeholder={t('recurring.endDate')}
-                  className="w-full justify-start"
-                />
-              </div>
-            </div>
-          )}
-          {isInstallment && (
-            <div className="grid grid-cols-2 gap-4 pt-1">
-              <div className="space-y-2">
-                <Label>{t('transactions.installmentFrequency')}</Label>
-                <select
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                  value={installmentFrequency}
-                  onChange={(e) => setInstallmentFrequency(e.target.value as RecurringTransaction['frequency'])}
-                >
-                  <option value="monthly">{t('recurring.monthly')}</option>
-                  <option value="quarterly">{t('recurring.quarterly')}</option>
-                  <option value="semiannual">{t('recurring.semiannual')}</option>
-                  <option value="weekly">{t('recurring.weekly')}</option>
-                  <option value="biweekly">{t('recurring.biweekly')}</option>
-                  <option value="yearly">{t('recurring.yearly')}</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>{t('transactions.installmentCount')}</Label>
-                <input
-                  type="number"
-                  min={2}
-                  max={360}
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                  value={installmentCount}
-                  onChange={(e) => setInstallmentCount(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-        </div>
       )}
 
       </div>

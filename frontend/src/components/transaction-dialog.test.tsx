@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { accounts as accountsApi, assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, RecurringTransaction, Transaction } from '@/types'
 
@@ -394,4 +394,55 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
   await user.keyboard('{Enter}')
 
   expect(onSave).not.toHaveBeenCalled()
+})
+
+const modeAccountFixtures = [
+  { id: 'acc-bank', name: 'Conta Corrente', type: 'checking', currency: 'USD' },
+  { id: 'acc-card', name: 'Cartao Roxo', type: 'credit_card', currency: 'USD' },
+] as Account[]
+
+function renderWithModes(defaultAccountId?: string) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  return renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={modeAccountFixtures}
+      defaultAccountId={defaultAccountId}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+}
+
+it('lists only plain accounts for an expense and only cards for a card expense', async () => {
+  const { user } = renderWithModes()
+
+  expect(screen.getByRole('radio', { name: t('transactions.modeExpense') })).toBeChecked()
+  expect(screen.getByRole('option', { name: 'Conta Corrente' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: 'Cartao Roxo' })).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('radio', { name: t('transactions.modeCard') }))
+
+  expect(screen.getByRole('option', { name: 'Cartao Roxo' })).toBeInTheDocument()
+  expect(screen.queryByRole('option', { name: 'Conta Corrente' })).not.toBeInTheDocument()
+  expect(screen.getByText(t('transactions.creditCard'))).toBeInTheDocument()
+  expect(screen.getByText(t('transactions.purchaseDate'))).toBeInTheDocument()
+})
+
+it('opens in card mode when started from a card and lets the bill be picked', async () => {
+  vi.spyOn(accountsApi, 'bills').mockResolvedValue([
+    { id: 'bill-1', account_id: 'acc-card', external_id: 'b1', due_date: '2026-12-10', total_amount: 100, currency: 'USD', minimum_payment: null },
+  ])
+  renderWithModes('acc-card')
+
+  expect(screen.getByRole('radio', { name: t('transactions.modeCard') })).toBeChecked()
+  const billSelect = (await screen.findByRole('option', { name: t('transactions.billAuto') })).closest('select') as HTMLSelectElement
+  expect(within(billSelect).getByRole('option', { name: t('transactions.billOption', { date: '12/10/2026' }) })).toBeInTheDocument()
 })
