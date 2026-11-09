@@ -43,6 +43,7 @@ from app.api.credit_card_bills import router as credit_card_bills_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
 from app.api.payees import router as payees_router
+from app.api.tags import router as tags_router
 from app.api.settings import router as settings_router
 from app.api.timezones import router as timezones_router
 from app.api.transactions import router as transactions_router
@@ -203,6 +204,7 @@ app.include_router(export_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
 app.include_router(payees_router)
+app.include_router(tags_router)
 app.include_router(invoices_router)
 app.include_router(invoice_attachments_router)
 app.include_router(invoice_schedules_router)

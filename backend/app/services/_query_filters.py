@@ -6,6 +6,7 @@ signal) only need to be made here.
 """
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import and_, case, func, or_, select
@@ -146,6 +147,8 @@ def counts_as_pnl():
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
       - transactions flagged `exclude_from_pnl=True` (kept in balance,
         omitted from income and expense calculations),
+      - transactions flagged `ignore_in_stats=True` (the user's "ignore in
+        statistics and charts" switch, same effect on totals),
       - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
@@ -156,6 +159,7 @@ def counts_as_pnl():
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
         Transaction.exclude_from_pnl.is_(False),
+        Transaction.ignore_in_stats.is_(False),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -278,6 +282,14 @@ def counts_as_user_pnl():
     return and_(
         counts_as_pnl(),
         Transaction.source != "settlement",
+    )
+
+
+def counts_in_budgets():
+    """SQL filter: user-level P/L plus the row is not left out of budgets."""
+    return and_(
+        counts_as_user_pnl(),
+        Transaction.ignore_in_budgets.is_(False),
     )
 
 
@@ -610,3 +622,53 @@ async def viewer_shared_spending_by_category(
         converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
         out[cat_id] = out.get(cat_id, 0.0) + float(converted)
     return out
+
+
+async def category_split_offsets(
+    session: AsyncSession,
+    filters: list,
+    amount_expr,
+    *,
+    debit_only: bool = False,
+) -> dict[uuid.UUID, Decimal]:
+    """Per-category change to apply to a spending-by-category total so that
+    transactions filed under several categories land in each one's share.
+
+    ``filters`` are the same where-clauses the caller's main query used (they
+    pick the transactions in scope), and ``amount_expr`` the amount column it
+    summed, normally the primary-currency amount. The main query attributes a
+    split transaction's whole amount to its main category, so this returns the
+    whole amount as a negative on that category and each part as a positive on
+    its own, signed like the caller's net (debit positive, credit negative;
+    only debits when ``debit_only``).
+    """
+    from app.models.transaction_category_split import TransactionCategorySplit as Part
+
+    sign = 1 if debit_only else case((Transaction.type == "credit", -1), else_=1)
+    stmt = (
+        select(
+            Transaction.category_id,
+            Part.category_id,
+            Part.amount,
+            Transaction.amount,
+            amount_expr,
+            sign,
+        )
+        .select_from(Transaction)
+        .join(Part, Part.transaction_id == Transaction.id)
+        .where(*filters)
+    )
+    if debit_only:
+        stmt = stmt.where(Transaction.type == "debit")
+    deltas: dict[uuid.UUID, Decimal] = {}
+    for main_id, part_cat, part_amount, tx_amount, converted, tx_sign in (
+        await session.execute(stmt)
+    ).all():
+        tx_amount = Decimal(tx_amount)
+        if not tx_amount:
+            continue
+        converted = Decimal(converted)
+        share = Decimal(part_amount) / tx_amount * converted * tx_sign
+        deltas[part_cat] = deltas.get(part_cat, Decimal("0")) + share
+        deltas[main_id] = deltas.get(main_id, Decimal("0")) - share
+    return deltas

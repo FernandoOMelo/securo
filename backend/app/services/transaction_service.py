@@ -28,7 +28,7 @@ from app.schemas.transaction import (
     TransferCreate,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import reconciliation_service, split_service
+from app.services import reconciliation_service, split_service, transaction_extras
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
@@ -875,6 +875,11 @@ async def create_transaction(
     # Resolve currency: explicit value > account currency
     currency = data.currency or account.currency
 
+    adjusted = transaction_extras.resolve_adjustment(
+        data.amount, data.adjustment_type, data.adjustment_amount
+    )
+    status = data.status or "posted"
+
     transaction = Transaction(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -883,7 +888,6 @@ async def create_transaction(
         payee_id=data.payee_id,
         external_id=data.external_id,
         description=data.description,
-        amount=data.amount,
         currency=currency,
         date=data.date,
         type=data.type,
@@ -891,7 +895,16 @@ async def create_transaction(
         # Manually-entered transactions default to "posted" (settled),
         # matching the model default. Callers may still create them as
         # "pending" (not yet settled) via TransactionCreate.status.
-        status=data.status or "posted",
+        status=status,
+        settled_date=(data.settled_date or data.date) if status == "posted" else None,
+        launch_date=data.launch_date or app_today(),
+        auto_settle=bool(data.auto_settle),
+        is_ignored=bool(data.is_ignored),
+        ignore_in_stats=bool(data.ignore_in_stats),
+        ignore_in_budgets=bool(data.ignore_in_budgets),
+        ignore_in_savings=bool(data.ignore_in_savings),
+        ignore_in_card_limit=bool(data.ignore_in_card_limit),
+        **adjusted,
         notes=data.notes,
         effective_bill_date=data.effective_bill_date,
         installment_number=data.installment_number,
@@ -917,6 +930,12 @@ async def create_transaction(
 
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
+    if data.tags is not None:
+        await transaction_extras.set_tags(session, workspace_id, transaction, data.tags)
+    if data.category_splits is not None:
+        await transaction_extras.set_category_splits(
+            session, workspace_id, transaction, data.category_splits
+        )
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
@@ -926,7 +945,7 @@ async def create_transaction(
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])
 
     await session.commit()
-    await session.refresh(transaction, ["category", "splits"])
+    await session.refresh(transaction, ["category", "splits", "tags", "category_splits"])
     return transaction
 
 
@@ -970,7 +989,11 @@ async def create_installment_series(
     await _ensure_category_in_workspace(session, workspace_id, base.category_id)
     await _ensure_payee_in_workspace(session, workspace_id, base.payee_id)
 
-    total = base.amount * n
+    adjusted = transaction_extras.resolve_adjustment(
+        base.amount, base.adjustment_type, base.adjustment_amount
+    )
+    parcel_amount = adjusted["amount"]
+    total = parcel_amount * n
     currency = base.currency or account.currency
     purchase_date = base.date
     intended_day = base.date.day
@@ -991,12 +1014,20 @@ async def create_installment_series(
             category_id=base.category_id,
             payee_id=base.payee_id,
             description=base.description,
-            amount=base.amount,
             currency=currency,
             date=installment_date,
             type=base.type,
             source="manual",
             status=data.first_installment_status if i == 1 else "pending",
+            settled_date=installment_date if (data.first_installment_status == "posted" and i == 1) else None,
+            launch_date=base.launch_date or app_today(),
+            auto_settle=bool(base.auto_settle),
+            is_ignored=bool(base.is_ignored),
+            ignore_in_stats=bool(base.ignore_in_stats),
+            ignore_in_budgets=bool(base.ignore_in_budgets),
+            ignore_in_savings=bool(base.ignore_in_savings),
+            ignore_in_card_limit=bool(base.ignore_in_card_limit),
+            **adjusted,
             notes=base.notes,
             effective_bill_date=base.effective_bill_date,
             installment_number=i,
@@ -1025,10 +1056,16 @@ async def create_installment_series(
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
             await split_service.replace_splits(session, tx, base.splits, user_id)
+        if base.tags is not None:
+            await transaction_extras.set_tags(session, workspace_id, tx, base.tags)
+        if base.category_splits is not None:
+            await transaction_extras.set_category_splits(
+                session, workspace_id, tx, base.category_splits
+            )
 
     await session.commit()
     for tx in created:
-        await session.refresh(tx, ["category", "splits"])
+        await session.refresh(tx, ["category", "splits", "tags", "category_splits"])
     return created
 
 
@@ -1596,6 +1633,13 @@ async def _apply_update_to_row(
             continue
         setattr(tx, key, value)
 
+    if "status" in update_data and "settled_date" not in update_data:
+        if tx.status == "posted":
+            if tx.settled_date is None:
+                tx.settled_date = tx.date
+        else:
+            tx.settled_date = None
+
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
 
@@ -1728,6 +1772,31 @@ async def update_transaction(
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+    tags_payload = update_data.pop("tags", None)
+    category_splits_payload = (
+        data.category_splits if "category_splits" in update_data else None
+    )
+    update_data.pop("category_splits", None)
+
+    # A charge or discount is entered on top of the base amount; the row
+    # stores the final value in `amount`. An amount edited without touching
+    # the adjustment replaces the final value and drops the adjustment, so
+    # the three columns never disagree.
+    if "adjustment_type" in update_data or "adjustment_amount" in update_data:
+        base = update_data.get("amount")
+        if base is None:
+            base = transaction.original_amount if transaction.original_amount is not None else transaction.amount
+        update_data.update(
+            transaction_extras.resolve_adjustment(
+                Decimal(base),
+                update_data.get("adjustment_type", transaction.adjustment_type),
+                update_data.get("adjustment_amount", transaction.adjustment_amount),
+            )
+        )
+    elif "amount" in update_data and transaction.adjustment_type:
+        update_data.update(
+            original_amount=None, adjustment_type=None, adjustment_amount=None
+        )
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -1846,6 +1915,16 @@ async def update_transaction(
             row_splits,
         )
 
+    if tags_payload is not None:
+        await transaction_extras.set_tags(session, workspace_id, transaction, tags_payload)
+    if category_splits_payload is not None:
+        await transaction_extras.set_category_splits(
+            session, workspace_id, transaction, category_splits_payload
+        )
+    elif "amount" in update_data and transaction.category_splits:
+        # The parts no longer add up to the new amount; scale them to fit.
+        await transaction_extras.rescale_category_splits(transaction)
+
     # A changed parcel amount makes the stored series total stale, whatever
     # the scope was: "this" reprices one parcel, "future"/"all" reprice
     # several. Recompute from the rows themselves so the two always agree.
@@ -1854,7 +1933,9 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
-    await session.refresh(transaction, ["category", "payee_entity", "splits"])
+    await session.refresh(
+        transaction, ["category", "payee_entity", "splits", "tags", "category_splits"]
+    )
     return transaction
 
 
@@ -2161,6 +2242,7 @@ async def _settle(
 
     for row in rows:
         row.status = "posted"
+        row.settled_date = new_date or row.date
         if new_date is not None:
             row.date = new_date
             account = await session.get(Account, row.account_id)

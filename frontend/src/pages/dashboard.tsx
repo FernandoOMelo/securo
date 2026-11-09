@@ -568,7 +568,11 @@ export default function DashboardPage() {
   // realised figure, so a month with nothing pending stays quiet.
   const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
-  const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
+  // Rows marked "ignore in monthly savings" stay in the totals above but
+  // not in this rate.
+  const savingsIncome = income - Number(summary?.savings_ignored_income_primary ?? 0)
+  const savingsExpenses = expenses - Number(summary?.savings_ignored_expenses_primary ?? 0)
+  const savingsRate = savingsIncome > 0 ? ((savingsIncome - savingsExpenses) / savingsIncome) * 100 : 0
   const isCurrentMonth = selectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)

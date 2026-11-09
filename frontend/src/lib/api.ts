@@ -3,6 +3,7 @@ import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
+  TagSummary,
   User,
   AdminUser,
   AdminUserList,
@@ -1000,6 +1001,20 @@ export const products = {
   removePrice: async (id: string, priceId: string): Promise<Product> => {
     const { data } = await api.delete(`/products/${id}/prices/${priceId}`)
     return data
+  },
+}
+
+export const tags = {
+  list: async (): Promise<TagSummary[]> => {
+    const { data } = await api.get('/tags')
+    return data
+  },
+  update: async (id: string, patch: { name?: string; color?: string | null }): Promise<TagSummary> => {
+    const { data } = await api.patch(`/tags/${id}`, patch)
+    return data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/tags/${id}`)
   },
 }
 

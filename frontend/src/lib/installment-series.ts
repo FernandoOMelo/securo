@@ -25,6 +25,8 @@ export interface InstallmentSeriesFormInput {
   installmentCount: string
   installmentFrequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   status: 'posted' | 'pending'
+  /** Extra form fields repeated on every parcel (dates, adjustment, flags, tags). */
+  extras?: Partial<InstallmentSeriesInput['base']>
 }
 
 /**
@@ -85,6 +87,7 @@ export function buildInstallmentSeriesInput(
       notes: input.notes.trim() || null,
       ...input.fxFields,
       ...(input.splits ? { splits: input.splits } : {}),
+      ...input.extras,
     },
     installments,
     first_installment_status: input.status,
@@ -110,6 +113,8 @@ export function hasNonStatusChange(
     'amount_primary',
     'fx_rate_used',
     'installment_total_amount',
+    'adjustment_amount',
+    'original_amount',
   ])
   const toNumber = (v: unknown): number | null => {
     if (v == null || v === '') return null
@@ -143,6 +148,31 @@ export function hasNonStatusChange(
       return false
     }
     const originalValue = original[key as keyof Transaction]
+    if (key === 'tags') {
+      const names = (v: unknown) =>
+        JSON.stringify(
+          (Array.isArray(v) ? v : [])
+            .map((tag) => (typeof tag === 'string' ? tag : (tag as { name: string }).name).toLowerCase())
+            .sort(),
+        )
+      return names(value) !== names(originalValue)
+    }
+    if (key === 'category_splits') {
+      const parts = (v: unknown) =>
+        JSON.stringify(
+          (Array.isArray(v) ? v : [])
+            .map((p) => `${(p as { category_id: string }).category_id}:${Number((p as { amount: unknown }).amount)}`)
+            .sort(),
+        )
+      return parts(value) !== parts(originalValue)
+    }
+    if (typeof value === 'boolean' && originalValue == null) {
+      return value !== false
+    }
+    if (key === 'amount' && original.original_amount != null) {
+      // With a charge or discount the form holds the value before it.
+      return toNumber(value) !== toNumber(original.original_amount)
+    }
     if (numericKeys.has(key)) {
       return toNumber(value) !== toNumber(originalValue)
     }

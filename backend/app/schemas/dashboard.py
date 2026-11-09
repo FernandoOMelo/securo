@@ -15,6 +15,10 @@ class DashboardSummary(BaseModel):
     monthly_expenses: float
     monthly_income_primary: float = 0.0
     monthly_expenses_primary: float = 0.0
+    # Part of the totals above that comes from rows marked "ignore in monthly
+    # savings", in the primary currency. The savings rate leaves them out.
+    savings_ignored_income_primary: float = 0.0
+    savings_ignored_expenses_primary: float = 0.0
     projected_income: float = 0.0
     projected_expenses: float = 0.0
     projected_income_primary: float = 0.0

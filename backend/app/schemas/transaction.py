@@ -13,6 +13,27 @@ from app.schemas.transaction_split import (
 )
 
 
+class CategorySplitInput(BaseModel):
+    category_id: uuid.UUID
+    amount: Decimal = Field(gt=0)
+
+
+class CategorySplitRead(BaseModel):
+    category_id: uuid.UUID
+    amount: Decimal
+    category: Optional[CategoryRead] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    color: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TransactionBase(BaseModel):
     description: str
     amount: Decimal
@@ -39,6 +60,24 @@ class TransactionCreate(TransactionBase):
     # (not yet settled) to record an entry that isn't settled yet. Only
     # posted/pending are valid.
     status: Optional[Literal["posted", "pending"]] = None
+    is_ignored: Optional[bool] = None
+    # Form fields beyond the basics: settlement/launch dates, auto-settle,
+    # a charge or discount on top of `amount`, and the "ignore in ..." switches.
+    settled_date: Optional[_Date] = None
+    launch_date: Optional[_Date] = None
+    auto_settle: Optional[bool] = None
+    # `amount` is the value before the adjustment; the stored amount is
+    # `amount` plus a charge or minus a discount.
+    adjustment_type: Optional[Literal["charge", "discount"]] = None
+    adjustment_amount: Optional[Decimal] = Field(default=None, ge=0)
+    ignore_in_stats: Optional[bool] = None
+    ignore_in_budgets: Optional[bool] = None
+    ignore_in_savings: Optional[bool] = None
+    ignore_in_card_limit: Optional[bool] = None
+    # Tag names; missing tags are created in the workspace.
+    tags: Optional[list[str]] = None
+    # Parts of the amount filed under different categories.
+    category_splits: Optional[list[CategorySplitInput]] = None
     # Manual installment metadata. When present, this transaction is one
     # installment of a manually-created series (created via the regular
     # endpoint, e.g. a single installment, or via the series endpoint
@@ -105,6 +144,23 @@ class TransactionUpdate(BaseModel):
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
     status: Optional[Literal["posted", "pending"]] = None
+    # Form fields beyond the basics: settlement/launch dates, auto-settle,
+    # a charge or discount on top of `amount`, and the "ignore in ..." switches.
+    settled_date: Optional[_Date] = None
+    launch_date: Optional[_Date] = None
+    auto_settle: Optional[bool] = None
+    # `amount` is the value before the adjustment; the stored amount is
+    # `amount` plus a charge or minus a discount.
+    adjustment_type: Optional[Literal["charge", "discount"]] = None
+    adjustment_amount: Optional[Decimal] = Field(default=None, ge=0)
+    ignore_in_stats: Optional[bool] = None
+    ignore_in_budgets: Optional[bool] = None
+    ignore_in_savings: Optional[bool] = None
+    ignore_in_card_limit: Optional[bool] = None
+    # Tag names; missing tags are created in the workspace.
+    tags: Optional[list[str]] = None
+    # Parts of the amount filed under different categories.
+    category_splits: Optional[list[CategorySplitInput]] = None
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
@@ -222,6 +278,18 @@ class TransactionRead(TransactionBase):
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
     exclude_from_pnl: bool = False
+    settled_date: Optional[_Date] = None
+    launch_date: Optional[_Date] = None
+    auto_settle: bool = False
+    adjustment_type: Optional[str] = None
+    adjustment_amount: Optional[Decimal] = None
+    original_amount: Optional[Decimal] = None
+    ignore_in_stats: bool = False
+    ignore_in_budgets: bool = False
+    ignore_in_savings: bool = False
+    ignore_in_card_limit: bool = False
+    tags: list[TagRead] = []
+    category_splits: list[CategorySplitRead] = []
     # Account balance right after this row, set only when the list asked for
     # it on one non-credit-card account's unfiltered ledger (#1202). The
     # primary-currency value is null when the account is already in it, or

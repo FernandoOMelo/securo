@@ -22,6 +22,8 @@ from app.models.app_settings import AppSetting
 from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
+from app.models.tag import Tag
+from app.models.transaction_category_split import TransactionCategorySplit
 from app.models.transaction_split import TransactionSplit
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
@@ -80,6 +82,8 @@ __all__ = [
     "Group",
     "GroupMember",
     "TransactionSplit",
+    "Tag",
+    "TransactionCategorySplit",
     "GroupSettlement",
     "Collection",
     "Invoice",

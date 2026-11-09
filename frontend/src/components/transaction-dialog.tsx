@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi, tags as tagsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -38,6 +38,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { CategorySelect } from '@/components/category-select'
+import { CategoryPartsEditor, TagsField } from '@/components/transaction-form-extras'
+import type { CategoryPartDraft } from '@/components/transaction-form-extras'
 import { PayeeSelect } from '@/components/payee-select'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
@@ -64,6 +66,40 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
       {children}
     </h4>
   )
+}
+
+function OptionToggle({
+  checked,
+  onChange,
+  title,
+  hint,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  title: string
+  hint?: string
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+      <input
+        type="checkbox"
+        className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        <span className="block text-sm font-medium">{title}</span>
+        {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
+      </span>
+    </label>
+  )
+}
+
+/** Tag names from a seed: the API sends objects, a duplicated draft strings. */
+function seedTagNames(seed: { tags?: unknown } | null | undefined): string[] {
+  const raw = seed?.tags
+  if (!Array.isArray(raw)) return []
+  return raw.map((tag) => (typeof tag === 'string' ? tag : (tag as { name: string }).name))
 }
 
 export type TransactionSavePayload = TransactionEditPayload & {
@@ -463,7 +499,9 @@ function TransactionForm({
   // toString() would read back through parseAmountInput with the dot taken
   // for a thousands separator.
   const [amount, setAmount] = useState(
-    seed?.amount != null ? formatAmountInput(seed.amount, displayLocale, 8) : ''
+    seed?.amount != null
+      ? formatAmountInput(Number(seed.original_amount ?? seed.amount), displayLocale, 8)
+      : ''
   )
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
@@ -478,6 +516,38 @@ function TransactionForm({
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
+  const [launchDate, setLaunchDate] = useState(seed?.launch_date ?? localDateString())
+  const [settledDate, setSettledDate] = useState(seed?.settled_date ?? '')
+  const [autoSettle, setAutoSettle] = useState(seed?.auto_settle ?? false)
+  const [adjustmentType, setAdjustmentType] = useState<'' | 'charge' | 'discount'>(
+    seed?.adjustment_type ?? '',
+  )
+  const [adjustmentValue, setAdjustmentValue] = useState(
+    seed?.adjustment_amount != null
+      ? formatAmountInput(Number(seed.adjustment_amount), displayLocale, 8)
+      : '',
+  )
+  const [tagNames, setTagNames] = useState<string[]>(() => seedTagNames(seed))
+  const { data: workspaceTags } = useQuery({
+    queryKey: ['tags'],
+    queryFn: tagsApi.list,
+    staleTime: 60 * 1000,
+  })
+  const [categoryParts, setCategoryParts] = useState<CategoryPartDraft[]>(() =>
+    (seed?.category_splits ?? []).length >= 2
+      ? (seed?.category_splits ?? []).map((part) => ({
+          key: crypto.randomUUID(),
+          categoryId: part.category_id,
+          amount: formatAmountInput(Number(part.amount), displayLocale, 8),
+        }))
+      : [],
+  )
+  const [hadInitialParts] = useState((seed?.category_splits ?? []).length >= 2)
+  const splitCategories = categoryParts.length >= 2
+  const [ignoreStats, setIgnoreStats] = useState(seed?.ignore_in_stats ?? false)
+  const [ignoreBudgets, setIgnoreBudgets] = useState(seed?.ignore_in_budgets ?? false)
+  const [ignoreSavings, setIgnoreSavings] = useState(seed?.ignore_in_savings ?? false)
+  const [ignoreCardLimit, setIgnoreCardLimit] = useState(seed?.ignore_in_card_limit ?? false)
   // The three kinds of entry the form is organised around. Card spending is
   // not a stored type: it is a debit on a credit-card account, so the mode
   // is derived from the account on open and only narrows the account list
@@ -869,13 +939,65 @@ function TransactionForm({
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
+        // The amount field holds the value before a charge or discount; the
+        // backend stores the final value and keeps both.
+        const parsedAdjustment = adjustmentType ? parseAmountInput(adjustmentValue, displayLocale) : null
+        if (adjustmentType && (parsedAdjustment == null || parsedAdjustment <= 0)) {
+          toast.error(t('transactions.adjustmentInvalid'))
+          return
+        }
+        if (adjustmentType === 'discount' && parsedAmount != null && (parsedAdjustment ?? 0) >= parsedAmount) {
+          toast.error(t('transactions.adjustmentInvalid'))
+          return
+        }
+        const finalAmountForParts = parsedAmount == null
+          ? 0
+          : parsedAmount + (adjustmentType === 'charge' ? (parsedAdjustment ?? 0) : adjustmentType === 'discount' ? -(parsedAdjustment ?? 0) : 0)
+        const partsTotal = categoryParts.reduce((sum, part) => sum + (parseAmountInput(part.amount, displayLocale) ?? 0), 0)
+        if (splitCategories) {
+          const incomplete = categoryParts.some((part) => !part.categoryId || !(parseAmountInput(part.amount, displayLocale) ?? 0))
+          const unique = new Set(categoryParts.map((part) => part.categoryId)).size === categoryParts.length
+          const target = isSynced ? Number(transaction?.amount ?? 0) : finalAmountForParts
+          if (incomplete || !unique || Math.abs(partsTotal - target) > 0.01) {
+            toast.error(t('transactions.partsInvalid'))
+            return
+          }
+        }
+        const categoryPartsPayload = splitCategories
+          ? {
+              category_splits: categoryParts.map((part) => ({
+                category_id: part.categoryId,
+                amount: parseAmountInput(part.amount, displayLocale) ?? 0,
+              })),
+            }
+          : hadInitialParts
+            ? { category_splits: [] }
+            : {}
+        const flagsPayload = {
+          is_ignored: isIgnored,
+          ignore_in_stats: ignoreStats,
+          ignore_in_budgets: ignoreBudgets,
+          ignore_in_savings: ignoreSavings,
+          ignore_in_card_limit: isCardMode ? ignoreCardLimit : false,
+          tags: tagNames,
+          ...categoryPartsPayload,
+        }
+        const datesPayload = isSynced
+          ? {}
+          : {
+              launch_date: launchDate || undefined,
+              ...(status === 'posted' && settledDate ? { settled_date: settledDate } : {}),
+              auto_settle: status === 'pending' && !isCardMode ? autoSettle : false,
+              adjustment_type: adjustmentType || null,
+              adjustment_amount: adjustmentType ? parsedAdjustment : null,
+            }
         const txData = isSynced
           ? {
               ...(description !== transaction?.description ? { description } : {}),
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
-              is_ignored: isIgnored,
+              ...flagsPayload,
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
@@ -890,7 +1012,8 @@ function TransactionForm({
               payee_id: payeeId || null,
               account_id: accountId || undefined,
               notes: notes.trim() || null,
-              is_ignored: isIgnored,
+              ...flagsPayload,
+              ...datesPayload,
               ...pnlExclusionPayload,
               // Creation defaults to "posted" server-side; the user can
               // override to "pending" right in the form (date & status row).
@@ -918,6 +1041,16 @@ function TransactionForm({
               installmentCount,
               installmentFrequency,
               status,
+              extras: {
+                ...datesPayload,
+                is_ignored: isIgnored,
+                ignore_in_stats: ignoreStats,
+                ignore_in_budgets: ignoreBudgets,
+                ignore_in_savings: ignoreSavings,
+                ignore_in_card_limit: isCardMode ? ignoreCardLimit : false,
+                tags: tagNames,
+                ...(splitCategories ? categoryPartsPayload : {}),
+              } as InstallmentSeriesInput['base'],
             })
           : undefined
         onSave(txData, recurringData, installmentData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
@@ -1180,6 +1313,44 @@ function TransactionForm({
           </select>
         </div>
       </div>
+      {!isSynced && (
+        <div className="space-y-2">
+          <Label>{t('transactions.adjustment')}</Label>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <select
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+              value={adjustmentType}
+              aria-label={t('transactions.adjustment')}
+              onChange={(e) => setAdjustmentType(e.target.value as '' | 'charge' | 'discount')}
+            >
+              <option value="">{t('transactions.adjustmentNone')}</option>
+              <option value="charge">{t('transactions.adjustmentCharge')}</option>
+              <option value="discount">{t('transactions.adjustmentDiscount')}</option>
+            </select>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={adjustmentValue}
+              disabled={!adjustmentType || hideAmounts}
+              placeholder={t('transactions.adjustmentValue')}
+              aria-label={t('transactions.adjustmentValue')}
+              onChange={(e) => setAdjustmentValue(e.target.value)}
+              className="bg-card"
+            />
+          </div>
+          {adjustmentType && (() => {
+            const base = parseAmountInput(amount, displayLocale)
+            const delta = parseAmountInput(adjustmentValue, displayLocale)
+            if (base == null || delta == null) return null
+            const final = adjustmentType === 'charge' ? base + delta : base - delta
+            return (
+              <p className="text-xs text-muted-foreground">
+                {t('transactions.finalAmount', { value: formatCurrency(final, currency, displayLocale) })}
+              </p>
+            )
+          })()}
+        </div>
+      )}
       <SectionTitle>{t('transactions.sectionDates')}</SectionTitle>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
@@ -1213,7 +1384,36 @@ function TransactionForm({
             <span>{t('transactions.settled')}</span>
           </label>
         </div>
+        {!isSynced && (
+          <div className="space-y-2">
+            <Label>{t('transactions.launchDate')}</Label>
+            <DatePickerInput
+              value={launchDate}
+              onChange={setLaunchDate}
+              className="w-full justify-start"
+            />
+          </div>
+        )}
+        {!isSynced && status === 'posted' && !isCardMode && (
+          <div className="space-y-2">
+            <Label>{t('transactions.settledDate')}</Label>
+            <DatePickerInput
+              value={settledDate}
+              onChange={setSettledDate}
+              placeholder={t('transactions.settledDateSameAsDue')}
+              className="w-full justify-start"
+            />
+          </div>
+        )}
       </div>
+      {!isSynced && status === 'pending' && !isCardMode && (
+        <OptionToggle
+          checked={autoSettle}
+          onChange={setAutoSettle}
+          title={t('transactions.autoSettle')}
+          hint={t('transactions.autoSettleHint')}
+        />
+      )}
       {showConversion && (
         <div className="border border-border rounded-md p-3 space-y-2">
           {transaction?.fx_fallback && (
@@ -1397,8 +1597,58 @@ function TransactionForm({
             allowNone={true}
             creatable
             className="bg-card"
+            disabled={splitCategories}
           />
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+              checked={splitCategories}
+              onChange={(e) => {
+                if (!e.target.checked) {
+                  setCategoryParts([])
+                  return
+                }
+                const total = parseAmountInput(amount, displayLocale) ?? 0
+                const half = Math.round((total / 2) * 100) / 100
+                setCategoryParts([
+                  { key: crypto.randomUUID(), categoryId: categoryId, amount: total ? formatAmountInput(total - half, displayLocale, 8) : '' },
+                  { key: crypto.randomUUID(), categoryId: '', amount: total ? formatAmountInput(half, displayLocale, 8) : '' },
+                ])
+              }}
+            />
+            {t('transactions.splitCategories')}
+          </label>
         </div>
+      </div>
+      {splitCategories && (
+        <CategoryPartsEditor
+          parts={categoryParts}
+          onChange={setCategoryParts}
+          total={
+            isSynced
+              ? Number(transaction?.amount ?? 0)
+              : (parseAmountInput(amount, displayLocale) ?? 0) +
+                (adjustmentType === 'charge'
+                  ? (parseAmountInput(adjustmentValue, displayLocale) ?? 0)
+                  : adjustmentType === 'discount'
+                    ? -(parseAmountInput(adjustmentValue, displayLocale) ?? 0)
+                    : 0)
+          }
+          parseAmount={(value) => parseAmountInput(value, displayLocale)}
+          currency={currency}
+          displayLocale={displayLocale}
+          categories={displayCategories}
+          groups={displayCategoryGroups}
+        />
+      )}
+      <div className="space-y-2">
+        <Label>{t('transactions.tags')}</Label>
+        <TagsField
+          value={tagNames}
+          onChange={setTagNames}
+          suggestions={(workspaceTags ?? []).map((tag) => tag.name)}
+        />
       </div>
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
@@ -1453,24 +1703,46 @@ function TransactionForm({
         />
       </div>
 
-      {transaction && <SectionTitle>{t('transactions.sectionOptions')}</SectionTitle>}
+      <SectionTitle>{t('transactions.sectionOptions')}</SectionTitle>
+      {isCardMode && (
+        <OptionToggle
+          checked={ignoreCardLimit}
+          onChange={setIgnoreCardLimit}
+          title={t('transactions.ignoreCardLimit')}
+          hint={t('transactions.ignoreCardLimitHint')}
+        />
+      )}
+      <OptionToggle
+        checked={ignoreStats}
+        onChange={setIgnoreStats}
+        title={t('transactions.ignoreStats')}
+        hint={t('transactions.ignoreStatsHint')}
+      />
+      <OptionToggle
+        checked={ignoreBudgets}
+        onChange={setIgnoreBudgets}
+        title={t('transactions.ignoreBudgets')}
+        hint={t('transactions.ignoreBudgetsHint')}
+      />
+      <OptionToggle
+        checked={ignoreSavings}
+        onChange={setIgnoreSavings}
+        title={t('transactions.ignoreSavings')}
+        hint={t('transactions.ignoreSavingsHint')}
+      />
+      <OptionToggle
+        checked={isIgnored}
+        onChange={setIsIgnored}
+        title={t('transactions.ignoreTotals')}
+        hint={t('transactions.ignoreTotalsHint')}
+      />
       {transaction && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
-            checked={excludeFromReports}
-            onChange={(event) => setExcludeFromReports(event.target.checked)}
-          />
-          <span>
-            <span className="block text-sm font-medium">
-              {t('transactions.excludeFromReports')}
-            </span>
-            <span className="block text-xs text-muted-foreground">
-              {t('transactions.excludeFromReportsHint')}
-            </span>
-          </span>
-        </label>
+        <OptionToggle
+          checked={excludeFromReports}
+          onChange={setExcludeFromReports}
+          title={t('transactions.excludeFromReports')}
+          hint={t('transactions.excludeFromReportsHint')}
+        />
       )}
 
       {/* Manual bill-cycle override (issue #92). CC accounts only. Empty

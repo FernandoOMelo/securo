@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.tag import transaction_tags
 
 if TYPE_CHECKING:
     from app.models.account import Account
@@ -16,7 +17,9 @@ if TYPE_CHECKING:
     from app.models.import_log import ImportLog
     from app.models.payee import Payee
     from app.models.recurring_transaction import RecurringTransaction
+    from app.models.tag import Tag
     from app.models.transaction_attachment import TransactionAttachment
+    from app.models.transaction_category_split import TransactionCategorySplit
     from app.models.transaction_split import TransactionSplit
 
 
@@ -115,6 +118,25 @@ class Transaction(Base):
         nullable=True,
         index=True,
     )
+    # Day the money actually moved, as opposed to `date` (the due date). Set
+    # when the row is settled; cleared when it goes back to pending.
+    settled_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    # Day the entry was recorded.
+    launch_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    # A pending row with this flag is settled by the daily job once its due
+    # date arrives.
+    auto_settle: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Charge ("charge") or discount ("discount") applied on top of
+    # `original_amount`; `amount` always holds the final value.
+    adjustment_type: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    adjustment_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    original_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    # Finer-grained "leave this out" switches. `is_ignored` keeps meaning
+    # "ignore in totals" (it also leaves the balance).
+    ignore_in_stats: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ignore_in_budgets: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ignore_in_savings: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    ignore_in_card_limit: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
@@ -130,6 +152,10 @@ class Transaction(Base):
     )
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list["Tag"]] = relationship(secondary=transaction_tags, lazy="selectin")
+    category_splits: Mapped[list["TransactionCategorySplit"]] = relationship(
+        back_populates="transaction", cascade="all, delete-orphan", lazy="selectin"
     )
 
     # Populated dynamically by the service (not DB columns).

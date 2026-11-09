@@ -23,6 +23,8 @@ from app.schemas.budget import (
 )
 from app.services._query_filters import (
     counts_as_user_pnl,
+    counts_in_budgets,
+    category_split_offsets,
     owner_split_offset_by_category,
     reporting_date_col,
 )
@@ -276,6 +278,15 @@ async def get_budget_vs_actual(
     # Get actual spending by category for this month (exclude transfer pairs)
     # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
+    month_filters = [
+        Transaction.workspace_id == workspace_id,
+        report_date >= month_start,
+        report_date < month_end,
+        Transaction.category_id.isnot(None),
+        report_date <= app_today(),
+        Transaction.status == "posted",
+        counts_in_budgets(),
+    ]
     spending_result = await session.execute(
         select(
             Transaction.category_id,
@@ -287,22 +298,18 @@ async def get_budget_vs_actual(
                 )
             ),
         )
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= month_start,
-            report_date < month_end,
-            Transaction.category_id.isnot(None),
-            report_date <= app_today(),
-            Transaction.status == "posted",
-            counts_as_user_pnl(),
-        )
+        .where(*month_filters)
         .group_by(Transaction.category_id)
     )
-    spending_map: dict[str, Decimal] = {}
-    for row in spending_result.all():
-        net = row[1] or Decimal("0")
-        if net > 0:
-            spending_map[str(row[0])] = net
+    raw_net: dict = {row[0]: row[1] or Decimal("0") for row in spending_result.all()}
+    # Transactions filed under several categories count in each one's share.
+    for cat_uuid, delta in (
+        await category_split_offsets(session, month_filters, _primary_amount_expr())
+    ).items():
+        raw_net[cat_uuid] = raw_net.get(cat_uuid, Decimal("0")) + delta
+    spending_map: dict[str, Decimal] = {
+        str(cat_uuid): net for cat_uuid, net in raw_net.items() if net > 0
+    }
 
     # Subtract non-owner shares of own splits — only the user's share counts.
     own_offset = await owner_split_offset_by_category(
@@ -355,7 +362,7 @@ async def get_budget_vs_actual(
         range_date_col=report_date,
     )
     for tx in forecast_transactions:
-        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx):
+        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx) or tx.ignore_in_budgets:
             continue
         cat_id = str(tx.category_id)
         amount = tx.amount_primary
@@ -370,6 +377,15 @@ async def get_budget_vs_actual(
     # Get previous month spending by category (exclude transfer pairs)
     # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
+    prev_filters = [
+        Transaction.workspace_id == workspace_id,
+        report_date >= prev_month_start,
+        report_date < prev_month_end,
+        Transaction.category_id.isnot(None),
+        report_date <= app_today(),
+        Transaction.status == "posted",
+        counts_in_budgets(),
+    ]
     prev_spending_result = await session.execute(
         select(
             Transaction.category_id,
@@ -381,22 +397,17 @@ async def get_budget_vs_actual(
                 )
             ),
         )
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= prev_month_start,
-            report_date < prev_month_end,
-            Transaction.category_id.isnot(None),
-            report_date <= app_today(),
-            Transaction.status == "posted",
-            counts_as_user_pnl(),
-        )
+        .where(*prev_filters)
         .group_by(Transaction.category_id)
     )
-    prev_spending_map: dict[str, Decimal] = {}
-    for row in prev_spending_result.all():
-        net = row[1] or Decimal("0")
-        if net > 0:
-            prev_spending_map[str(row[0])] = net
+    prev_raw_net: dict = {row[0]: row[1] or Decimal("0") for row in prev_spending_result.all()}
+    for cat_uuid, delta in (
+        await category_split_offsets(session, prev_filters, _primary_amount_expr())
+    ).items():
+        prev_raw_net[cat_uuid] = prev_raw_net.get(cat_uuid, Decimal("0")) + delta
+    prev_spending_map: dict[str, Decimal] = {
+        str(cat_uuid): net for cat_uuid, net in prev_raw_net.items() if net > 0
+    }
 
     prev_own_offset = await owner_split_offset_by_category(
         session, user_id, prev_month_start, prev_month_end,
@@ -444,7 +455,7 @@ async def get_budget_vs_actual(
         range_date_col=report_date,
     )
     for tx in prev_forecast_transactions:
-        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx):
+        if tx.type != "debit" or not tx.category_id or not _counts_as_user_pnl_row(tx) or tx.ignore_in_budgets:
             continue
         cat_id = str(tx.category_id)
         amount = tx.amount_primary
@@ -561,7 +572,7 @@ async def get_budget_suggestions(
         report_date <= today,
         Transaction.category_id.isnot(None),
         Transaction.status == "posted",
-        counts_as_user_pnl(),
+        counts_in_budgets(),
     )
 
     spending_result = await session.execute(

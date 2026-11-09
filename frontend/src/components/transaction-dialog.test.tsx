@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { accounts as accountsApi, assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { accounts as accountsApi, assets, currencies, groups, mortgagePayments, payees, tags as tagsApi, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, RecurringTransaction, Transaction } from '@/types'
 
@@ -446,3 +446,129 @@ it('opens in card mode when started from a card and lets the bill be picked', as
   const billSelect = (await screen.findByRole('option', { name: t('transactions.billAuto') })).closest('select') as HTMLSelectElement
   expect(within(billSelect).getByRole('option', { name: t('transactions.billOption', { date: '12/10/2026' }) })).toBeInTheDocument()
 })
+
+function renderForSave(onSave = vi.fn(), accounts = modeAccountFixtures, defaultAccountId?: string) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(tagsApi, 'list').mockResolvedValue([])
+  return {
+    onSave,
+    ...renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={null}
+        categories={[
+          { id: 'cat-a', name: 'Mercado', icon: 'x', color: '#000', is_system: false, is_ignored: false } as never,
+          { id: 'cat-b', name: 'Casa', icon: 'x', color: '#000', is_system: false, is_ignored: false } as never,
+        ]}
+        categoryGroups={[]}
+        accounts={accounts}
+        defaultAccountId={defaultAccountId}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    ),
+  }
+}
+
+async function fillBasics(user: ReturnType<typeof renderWithProviders>['user'], amount = '100') {
+  const form = screen.getByRole('option', { name: 'Conta Corrente' }).closest('form') as HTMLFormElement
+  const [description, amountInput] = Array.from(form.querySelectorAll<HTMLInputElement>('input[required]'))
+  await user.type(description, 'Conta de luz')
+  await user.type(amountInput, amount)
+  await user.selectOptions(screen.getByRole('option', { name: 'Conta Corrente' }).closest('select') as HTMLSelectElement, 'acc-bank')
+  return form
+}
+
+it('sends tags, the ignore switches and the dates with the transaction', async () => {
+  const { user, onSave } = renderForSave()
+  await fillBasics(user)
+
+  const tagInput = screen.getByPlaceholderText(t('transactions.tagsPlaceholder'))
+  await user.type(tagInput, 'viagem{Enter}')
+  await user.type(tagInput, '#ferias,')
+  expect(screen.getByText('#viagem')).toBeInTheDocument()
+  expect(screen.getByText('#ferias')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('checkbox', { name: new RegExp(t('transactions.ignoreStats')) }))
+  await user.click(screen.getByRole('checkbox', { name: new RegExp(t('transactions.ignoreBudgets')) }))
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  expect(onSave).toHaveBeenCalledTimes(1)
+  const payload = onSave.mock.calls[0][0]
+  expect(payload.tags).toEqual(['viagem', 'ferias'])
+  expect(payload).toMatchObject({
+    ignore_in_stats: true,
+    ignore_in_budgets: true,
+    ignore_in_savings: false,
+    ignore_in_card_limit: false,
+    is_ignored: false,
+    adjustment_type: null,
+    auto_settle: false,
+  })
+  expect(payload.launch_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+}, 20000)
+
+it('sends the charge on top of the typed amount and shows the final value', async () => {
+  const { user, onSave } = renderForSave()
+  await fillBasics(user, '100')
+
+  await user.selectOptions(screen.getByLabelText(t('transactions.adjustment')), 'charge')
+  await user.type(screen.getByLabelText(t('transactions.adjustmentValue')), '12.5')
+  expect(screen.getByText(/\$112\.50/)).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  const payload = onSave.mock.calls[0][0]
+  expect(payload.amount).toBe(100)
+  expect(payload.adjustment_type).toBe('charge')
+  expect(payload.adjustment_amount).toBe(12.5)
+}, 20000)
+
+it('blocks a discount that covers the whole amount', async () => {
+  const { user, onSave } = renderForSave()
+  await fillBasics(user, '50')
+
+  await user.selectOptions(screen.getByLabelText(t('transactions.adjustment')), 'discount')
+  await user.type(screen.getByLabelText(t('transactions.adjustmentValue')), '50')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  expect(onSave).not.toHaveBeenCalled()
+}, 20000)
+
+it('only offers auto-settle for a pending expense and sends the flag', async () => {
+  const { user, onSave } = renderForSave()
+  await fillBasics(user)
+
+  expect(screen.queryByText(t('transactions.autoSettle'))).not.toBeInTheDocument()
+  await user.click(screen.getByRole('checkbox', { name: t('transactions.settled') }))
+  await user.click(screen.getByRole('checkbox', { name: new RegExp(t('transactions.autoSettle')) }))
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  const payload = onSave.mock.calls[0][0]
+  expect(payload).toMatchObject({ status: 'pending', auto_settle: true })
+  expect(payload.settled_date).toBeUndefined()
+}, 20000)
+
+it('splits the amount between categories and only saves when the parts add up', async () => {
+  const { user, onSave } = renderForSave()
+  await fillBasics(user, '100')
+
+  await user.click(screen.getByRole('checkbox', { name: t('transactions.splitCategories') }))
+  const partInputs = screen.getAllByLabelText(t('transactions.partAmount')) as HTMLInputElement[]
+  expect(partInputs.map((input) => input.value)).toEqual(['50', '50'])
+
+  // Nothing picked for the parts yet: the save is refused.
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  expect(onSave).not.toHaveBeenCalled()
+}, 20000)
+
+it('shows the card limit switch only for a card expense', async () => {
+  const { user } = renderForSave()
+  expect(screen.queryByText(t('transactions.ignoreCardLimit'))).not.toBeInTheDocument()
+  await user.click(screen.getByRole('radio', { name: t('transactions.modeCard') }))
+  expect(screen.getByText(t('transactions.ignoreCardLimit'))).toBeInTheDocument()
+}, 20000)

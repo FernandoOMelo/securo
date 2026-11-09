@@ -47,6 +47,28 @@ async def _generate_all() -> int:
     return total
 
 
+async def _settle_auto() -> int:
+    from app.services import transaction_extras
+
+    engine, session_maker = _make_session_maker()
+    try:
+        async with session_maker() as session:
+            operation_timezone = await get_timezone(session, fresh=True)
+        with use_resolved_timezone(operation_timezone):
+            async with session_maker() as session:
+                return await transaction_extras.settle_due_transactions(session)
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.tasks.recurring_tasks.settle_auto_transactions")
+def settle_auto_transactions() -> dict:
+    """Celery task: settle pending "auto-settle" transactions that are due."""
+    settled = asyncio.run(_settle_auto())
+    logger.info("Auto-settle complete: %d transactions settled", settled)
+    return {"settled": settled}
+
+
 @celery_app.task(name="app.tasks.recurring_tasks.generate_all_recurring")
 def generate_all_recurring() -> dict:
     """Celery task: generate pending recurring transactions for all users."""

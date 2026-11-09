@@ -17,6 +17,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, DailyBaseline, BalanceHistory
 from app.services._query_filters import (
     counts_as_user_pnl,
+    category_split_offsets,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
@@ -209,6 +210,7 @@ def _counts_as_user_pnl_row(tx: Transaction) -> bool:
         tx.transfer_pair_id
         or tx.is_ignored
         or tx.exclude_from_pnl
+        or tx.ignore_in_stats
         or tx.source == "settlement"
         or (category and (category.treat_as_transfer or category.is_ignored))
     )
@@ -576,6 +578,39 @@ async def get_summary(
         monthly_income_primary = float(primary_row[0] or 0)
         monthly_expenses_primary = abs(float(primary_row[1] or 0))
 
+    # Rows the user marked "ignore in monthly savings" still count as income
+    # and spending everywhere else; the savings rate subtracts them.
+    savings_ignored_result = await session.execute(
+        select(
+            func.sum(
+                case(
+                    (Transaction.type == "credit", func.coalesce(Transaction.amount_primary, Transaction.amount)),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (Transaction.type == "debit", func.coalesce(Transaction.amount_primary, Transaction.amount)),
+                    else_=0,
+                )
+            ),
+        )
+        .where(
+            Transaction.workspace_id == workspace_id,
+            report_date >= month_start,
+            report_date < month_end,
+            report_date <= today,
+            Transaction.source != "opening_balance",
+            Transaction.status == "posted",
+            counts_as_user_pnl(),
+            Transaction.ignore_in_savings.is_(True),
+            *acct_filter,
+        )
+    )
+    savings_ignored_row = savings_ignored_result.one()
+    savings_ignored_income_primary = float(savings_ignored_row[0] or 0)
+    savings_ignored_expenses_primary = abs(float(savings_ignored_row[1] or 0))
+
     if not filtered:
         # Apply share-only offset in primary currency (FX-converted).
         own_offset_inc_pri, own_offset_exp_pri = await owner_split_offset_pnl(
@@ -704,6 +739,8 @@ async def get_summary(
         monthly_expenses=abs(real_monthly_expenses),
         monthly_income_primary=round(monthly_income_primary, 2),
         monthly_expenses_primary=round(monthly_expenses_primary, 2),
+        savings_ignored_income_primary=round(savings_ignored_income_primary, 2),
+        savings_ignored_expenses_primary=round(savings_ignored_expenses_primary, 2),
         projected_income=projected_monthly_income,
         projected_expenses=abs(projected_monthly_expenses),
         projected_income_primary=round(projected_income_primary, 2),
@@ -810,6 +847,17 @@ async def get_spending_by_category(
 
     # Real transactions grouped by category (exclude transfer-like movements
     # and closed accounts). Use amount_primary for multi-currency support.
+    spending_filters = [
+        Transaction.workspace_id == workspace_id,
+        Transaction.type == "debit",
+        report_date >= month_start,
+        report_date < month_end,
+        report_date <= today,
+        Transaction.source != "opening_balance",
+        Transaction.status == "posted",
+        counts_as_user_pnl(),
+        *acct_filter,
+    ]
     result = await session.execute(
         select(
             Category.id,
@@ -820,17 +868,7 @@ async def get_spending_by_category(
         )
         .select_from(Transaction)
         .outerjoin(Category, Transaction.category_id == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
-            report_date >= month_start,
-            report_date < month_end,
-            report_date <= today,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(),
-            *acct_filter,
-        )
+        .where(*spending_filters)
         .group_by(Category.id, Category.name, Category.icon, Category.color)
         .order_by(func.sum(_primary_amount_expr()).desc())
     )
@@ -846,6 +884,28 @@ async def get_spending_by_category(
             "total": abs(float(row[4] or 0)),
             "projected": 0.0,
         }
+
+    # Transactions filed under several categories count in each one's share.
+    split_deltas = await category_split_offsets(
+        session, spending_filters, _primary_amount_expr(), debit_only=True
+    )
+    if split_deltas:
+        missing = [c for c in split_deltas if str(c) not in spending_map]
+        if missing:
+            for cat in (
+                await session.execute(select(Category).where(Category.id.in_(missing)))
+            ).scalars():
+                spending_map[str(cat.id)] = {
+                    "name": cat.name,
+                    "icon": cat.icon or "circle-help",
+                    "color": cat.color or "#6B7280",
+                    "total": 0.0,
+                    "projected": 0.0,
+                }
+        for cat_uuid, delta in split_deltas.items():
+            spending_map[str(cat_uuid)]["total"] += float(delta)
+        for key in [k for k, v in spending_map.items() if v["total"] <= 0]:
+            spending_map.pop(key)
 
     # Subtract non-owner shares per category — owner-side splits should
     # contribute only the owner's share, not the full amount.

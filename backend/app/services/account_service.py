@@ -154,14 +154,32 @@ def _balance_subqueries(today: _Date):
     future_charges_sq = (
         select(
             Transaction.account_id,
-            func.coalesce(func.sum(effective_amount), 0).label("future_charges"),
+            # Future charges hold limit; charges flagged "ignore in card limit"
+            # hold none, and the ones already counted in the balance are given
+            # back, so the flag also frees limit for purchases dated up to today.
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Transaction.date > today,
+                            case(
+                                (Transaction.ignore_in_card_limit.is_(True), 0),
+                                else_=effective_amount,
+                            ),
+                        ),
+                        (Transaction.ignore_in_card_limit.is_(True), -effective_amount),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("future_charges"),
         )
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Account.type == "credit_card",
             Transaction.type == "debit",
-            Transaction.date > today,
+            or_(Transaction.date > today, Transaction.ignore_in_card_limit.is_(True)),
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),

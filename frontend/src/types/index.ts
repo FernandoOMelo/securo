@@ -330,6 +330,23 @@ export interface DescriptionSuggestion {
   payee_id: string | null
 }
 
+export interface TransactionTag {
+  id: string
+  name: string
+  color: string | null
+}
+
+export interface TagSummary extends TransactionTag {
+  transaction_count: number
+}
+
+/** One category's share of a transaction's amount. */
+export interface TransactionCategoryPart {
+  category_id: string
+  amount: number | string
+  category?: Category | null
+}
+
 export interface Transaction {
   /** Every invoice this transaction settles — a payout net of fees
    *  settles several. Absent in a workspace without the module. */
@@ -396,6 +413,24 @@ export interface Transaction {
   is_ignored: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
+  // Day the money actually moved (set when settled) and the day the entry was
+  // recorded. `date` stays the due date.
+  settled_date?: string | null
+  launch_date?: string | null
+  // A pending row with this flag is settled by the daily job once it is due.
+  auto_settle?: boolean
+  // `amount` is the final value; with a charge or discount the value before
+  // it is `original_amount`.
+  adjustment_type?: 'charge' | 'discount' | null
+  adjustment_amount?: number | string | null
+  original_amount?: number | string | null
+  // Finer "leave this out" switches; `is_ignored` is "ignore in totals".
+  ignore_in_stats?: boolean
+  ignore_in_budgets?: boolean
+  ignore_in_savings?: boolean
+  ignore_in_card_limit?: boolean
+  tags?: TransactionTag[]
+  category_splits?: TransactionCategoryPart[]
   // Balance right after this row, filled by the server only when the list
   // was asked for it on a single non-credit-card account (#1202).
   // `running_balance_primary` is null when the account is in the primary
@@ -430,6 +465,18 @@ export interface InstallmentSeriesInput {
     fx_rate_used?: number | null
     effective_bill_date?: string | null
     splits?: TransactionSplitsInput | null
+    settled_date?: string | null
+    launch_date?: string | null
+    auto_settle?: boolean
+    adjustment_type?: 'charge' | 'discount' | null
+    adjustment_amount?: number | null
+    is_ignored?: boolean
+    ignore_in_stats?: boolean
+    ignore_in_budgets?: boolean
+    ignore_in_savings?: boolean
+    ignore_in_card_limit?: boolean
+    tags?: string[]
+    category_splits?: { category_id: string; amount: number }[]
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
@@ -465,8 +512,12 @@ export interface TransactionSplitsInput {
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'tags' | 'category_splits'> & {
   splits?: TransactionSplitsInput | null
+  /** Tag names; missing tags are created. */
+  tags?: string[]
+  /** Replaces the category parts; an empty list clears them. */
+  category_splits?: { category_id: string; amount: number }[]
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'
@@ -831,6 +882,9 @@ export interface DashboardSummary {
   monthly_expenses: number
   monthly_income_primary: number
   monthly_expenses_primary: number
+  // Part of the month's totals from rows marked "ignore in monthly savings".
+  savings_ignored_income_primary?: number
+  savings_ignored_expenses_primary?: number
   projected_income?: number
   projected_expenses?: number
   projected_income_primary?: number
